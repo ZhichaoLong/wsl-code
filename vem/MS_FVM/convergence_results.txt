@@ -1,0 +1,25 @@
+========== L2 Error Convergence Study (Cell Average 2D) ==========
+Reference solution: 16384 elements (128x128)
+Number of components: 3
+
+Elements    h           L2-Comp0      L2-Comp1      L2-Comp2      
+4           5.000000e-01  1.318388e-05  5.658681e-04  5.790519e-04  
+16          2.500000e-01  3.081418e-06  1.322631e-04  1.353445e-04  
+64          1.250000e-01  7.486986e-07  3.213636e-05  3.288506e-05  
+256         6.250000e-02  1.846651e-07  7.926382e-06  8.111048e-06  
+1024        3.125000e-02  4.498612e-08  1.930940e-06  1.975926e-06  
+4096        1.562500e-02  1.018078e-08  4.369893e-07  4.471701e-07  
+
+Convergence order (computed from last two levels):
+  Component 0: 2.1436
+  Component 1: 2.1436
+  Component 2: 2.1436
+
+Convergence order by successive levels:
+From level  To level    Order-0   Order-1   Order-2   
+4           16          2.0971    2.0971    2.0971    
+16          64          2.0411    2.0411    2.0411    
+64          256         2.0195    2.0195    2.0195    
+256         1024        2.0374    2.0374    2.0374    
+1024        4096        2.1436    2.1436    2.1436    
+===================================================================

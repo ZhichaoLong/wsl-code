@@ -1,0 +1,122 @@
+PetscErrorCode TPFA1DSolverNew::solveLinearSystem_MPI(Mat A_seq, Vec b_seq, Vec& x_seq, PetscBool* converged)
+{
+    PetscErrorCode ierr;
+    PetscInt size, rank;
+
+    // 获取MPI通信子信息
+    MPI_Comm comm = PETSC_COMM_WORLD;
+    ierr = MPI_Comm_size(comm, &size); CHKERRQ(ierr);
+    ierr = MPI_Comm_rank(comm, &rank); CHKERRQ(ierr);
+
+    // 如果只有1个进程，直接用串行AMG求解器
+    if (size == 1) {
+        if (rank == 0) {
+            PetscPrintf(PETSC_COMM_SELF, "MPI Parallel Solver: only 1 process, using serial solver\n");
+        }
+        return solveLinearSystem_AMG(A_seq, b_seq, x_seq, converged);
+    }
+
+    if (rank == 0) {
+        PetscPrintf(PETSC_COMM_SELF, "MPI Parallel Solver: using %d processes\n", size);
+    }
+
+    // ========== 所有进程都需要的变量 ==========
+    PetscInt m = 0, n = 0;
+    Mat A_mpi = nullptr;
+    Vec b_mpi = nullptr;
+    Vec x_mpi = nullptr;
+
+    // ========== Step 1: Rank 0 转换数据，其他进程创建占位符 ==========
+    if (rank == 0) {
+        // 获取大小
+        ierr = MatGetSize(A_seq, &m, &n); CHKERRQ(ierr);
+
+        // 转换矩阵：串行 -> 并行
+        Mat A_seq_copy;
+        ierr = MatDuplicate(A_seq, MAT_COPY_VALUES, &A_seq_copy); CHKERRQ(ierr);
+        ierr = MatConvert(A_seq_copy, MATMPIAIJ, MAT_INITIAL_MATRIX, &A_mpi); CHKERRQ(ierr);
+        ierr = MatDestroy(&A_seq_copy); CHKERRQ(ierr);
+
+        // 转换向量：串行 -> 并行
+        Vec b_seq_copy;
+        ierr = VecDuplicate(b_seq, &b_seq_copy); CHKERRQ(ierr);
+        ierr = VecCopy(b_seq, b_seq_copy); CHKERRQ(ierr);
+
+        // 手动创建并行向量并复制数据
+        ierr = VecCreateMPI(comm, m, m, &b_mpi); CHKERRQ(ierr);
+        PetscScalar *b_vals;
+        ierr = VecGetArray(b_seq, &b_vals); CHKERRQ(ierr);
+        for (PetscInt i = 0; i < m; ++i) {
+            ierr = VecSetValues(b_mpi, 1, &i, &b_vals[i], INSERT_VALUES); CHKERRQ(ierr);
+        }
+        ierr = VecRestoreArray(b_seq, &b_vals); CHKERRQ(ierr);
+        ierr = VecAssemblyBegin(b_mpi); CHKERRQ(ierr);
+        ierr = VecAssemblyEnd(b_mpi); CHKERRQ(ierr);
+        ierr = VecDestroy(&b_seq_copy); CHKERRQ(ierr);
+    } else {
+        // 其他进程：创建空对象
+        ierr = MatCreate(comm, &A_mpi); CHKERRQ(ierr);
+        ierr = MatSetSizes(A_mpi, 0, 0, m, n); CHKERRQ(ierr);
+        ierr = MatSetType(A_mpi, MATMPIAIJ); CHKERRQ(ierr);
+        ierr = MatSetUp(A_mpi); CHKERRQ(ierr);
+
+        ierr = VecCreateMPI(comm, 0, m, &b_mpi); CHKERRQ(ierr);
+    }
+
+    // 广播大小给其他进程
+    ierr = MPI_Bcast(&m, 1, MPIU_INT, 0, comm); CHKERRQ(ierr);
+    ierr = MPI_Bcast(&n, 1, MPIU_INT, 0, comm); CHKERRQ(ierr);
+
+    // ========== Step 2: 所有进程创建解向量 ==========
+    ierr = VecDuplicate(b_mpi, &x_mpi); CHKERRQ(ierr);
+    ierr = VecSet(x_mpi, 0.0); CHKERRQ(ierr);
+
+    // ========== Step 3: 所有进程创建并运行 KSP 求解器 ==========
+    KSP ksp;
+    PC pc;
+    KSPConvergedReason reason;
+
+    ierr = KSPCreate(comm, &ksp); CHKERRQ(ierr);
+    ierr = KSPSetOperators(ksp, A_mpi, A_mpi); CHKERRQ(ierr);
+
+    ierr = KSPSetType(ksp, KSPGMRES); CHKERRQ(ierr);
+    ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
+    ierr = PCSetType(pc, PCJACOBI); CHKERRQ(ierr);
+
+    ierr = KSPSetTolerances(ksp, 1e-12, 1e-50, PETSC_DEFAULT, 1000000); CHKERRQ(ierr);
+    ierr = KSPSetFromOptions(ksp); CHKERRQ(ierr);
+
+    // 求解 - 所有进程必须调用！
+    ierr = KSPSolve(ksp, b_mpi, x_mpi); CHKERRQ(ierr);
+
+    ierr = KSPGetConvergedReason(ksp, &reason); CHKERRQ(ierr);
+    *converged = (reason >= 0) ? PETSC_TRUE : PETSC_FALSE;
+
+    if (*converged && rank == 0) {
+        PetscInt its;
+        KSPGetIterationNumber(ksp, &its);
+        PetscPrintf(PETSC_COMM_SELF, "MPI Parallel GMRES + Jacobi converged, iterations: %d\n", its);
+    } else if (!(*converged) && rank == 0) {
+        PetscPrintf(PETSC_COMM_SELF, "ERROR: MPI Parallel GMRES + Jacobi did not converge, reason: %d\n", reason);
+    }
+
+    // ========== Step 4: Rank 0 收集解 ==========
+    if (rank == 0) {
+        PetscScalar *x_out;
+        ierr = VecGetArray(x_seq, &x_out); CHKERRQ(ierr);
+        for (PetscInt i = 0; i < m; ++i) {
+            PetscScalar val;
+            ierr = VecGetValues(x_mpi, 1, &i, &val); CHKERRQ(ierr);
+            x_out[i] = val;
+        }
+        ierr = VecRestoreArray(x_seq, &x_out); CHKERRQ(ierr);
+    }
+
+    // ========== 清理 ==========
+    KSPDestroy(&ksp);
+    VecDestroy(&x_mpi);
+    VecDestroy(&b_mpi);
+    MatDestroy(&A_mpi);
+
+    return 0;
+}

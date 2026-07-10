@@ -1,0 +1,128 @@
+# ====================
+# Build 产物
+# ====================
+build/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.elf
+*.s
+*.i
+*.ii
+*.swp
+*~
+
+# ====================
+# CMake/Make 构建系统
+# ====================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+Makefile
+*.cmake
+!Makefile  # 但项目自己写的 Makefile 要保留！
+*.mk
+*.d  # 自动生成的依赖文件
+
+# ====================
+# PETSc/MPI 临时文件
+# ====================
+*.pyc
+__pycache__/
+*.tsv
+*.log
+core*
+*.core
+
+# ====================
+# 数据文件（体积大，不要上传）
+# ====================
+data/
+solution_*.txt
+*.vtk
+*.vtu
+*.dat
+*.bin
+*.raw
+*.csv
+*.tsv
+vem/MS_FVM/meshdata/
+vem/MS_FVM/error_data*/
+vem/MS_FVM/MS_1d/t_step_*/
+vem/gmesh_py/mesh_data/
+
+# ====================
+# 可执行文件（已经编好的二进制）
+# ====================
+cuda/main_aux/
+vem/MS_FVM/vem_Hdiv/build/
+vem/MS_FVM/vem_Hdiv/cuda_test/build/
+vem/MS_FVM/vem_Hdiv/build/
+
+# ====================
+# Python/绘图输出
+# ====================
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+frames/
+plots/
+figures/
+
+# ====================
+# 编辑器/IDE
+# ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ====================
+# CUDA NVCC 中间文件
+# ====================
+*.ptx
+*.cubin
+*.fatbin
+*.fatbin.*
+*.gpu
+*.linkinfo
+*.cpp
+*.cudafe?
+*.cudafe*
+*.cufile
+
+# ====================
+# Git 临时
+# ====================
+*.orig
+*.rej
+*.backup
+
+# ====================
+# 压缩文件和大文件
+# ====================
+*.zip
+*.tar
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+
+# ====================
+# 其他仓库/第三方代码
+# ====================
+vem/VEM-Vempp-main/

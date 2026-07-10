@@ -1,0 +1,31 @@
+============================================================
+POLYGON MESH INFORMATION - 正方形
+============================================================
+
+DOMAIN INFORMATION:
+  Shape: 正方形
+  Bounding Box: [0, 1] × [0, 1]
+
+MESH STATISTICS:
+  Number of Nodes: 49
+  Number of Polygons: 36
+
+POLYGON TYPE DISTRIBUTION:
+  4-sided polygons:   36 (100.0%)
+
+  Average vertices per polygon: 4.00
+
+NODE COORDINATE RANGES:
+  X: [0.000000, 1.000000]
+  Y: [0.000000, 1.000000]
+
+GENERATION PARAMETERS:
+  Desired Nodes: 50
+  Iterations: 100
+
+FILES:
+  poly_mesh_data/nodes.txt
+  poly_mesh_data/elements.txt
+  poly_mesh_data/domain_visualization.png
+  poly_mesh_data/mesh_visualization.png
+  poly_mesh_data/mesh_info.txt

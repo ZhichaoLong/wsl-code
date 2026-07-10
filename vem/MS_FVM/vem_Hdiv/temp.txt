@@ -1,0 +1,93 @@
+// =============================================================================
+// 时间推进求解（含皮卡迭代）
+// =============================================================================
+PetscErrorCode MSSolver::solveTimeStepping() {
+    PetscErrorCode ierr;
+
+    double current_time = 0.0;
+    int time_step_count = 0;
+
+    // 获取向量大小
+    PetscInt vec_size;
+    VecGetSize(getRawVec(solution_), &vec_size);
+
+    // ========== 时间推进循环 ==========
+    while (current_time < final_time_ - 1e-12) {
+        current_time += delta_t_;
+        time_step_count++;
+        std::cout << "\n时间步 " << time_step_count << ", t = " << current_time << std::endl;
+
+        bool is_initial_step = false;
+        bool is_initial_first_tstep = false;
+        bool converged = false;
+        picard_iter_count_ = 0;
+
+        // ========== 第一个皮卡迭代步 ==========
+        picard_iter_count_++;
+        std::cout << "皮卡迭代步: " << picard_iter_count_ << std::endl;
+
+        // 设置标志位
+        if (time_step_count == 1) {
+            is_initial_step = true;
+            is_initial_first_tstep = true;
+        } else {
+            is_initial_step = false;
+            is_initial_first_tstep = false;
+        }
+
+        // 组装矩阵并求解
+        ierr = assembleStiffnessMatrix(is_initial_step, is_initial_first_tstep);
+        CHKERRQ(ierr);
+        ierr = solveWithDirichletBC();
+        CHKERRQ(ierr);
+
+        // ========== 从第二个皮卡迭代步开始检查收敛 ==========
+        while (!converged && picard_iter_count_ < picard_max_iter_) {
+            picard_iter_count_++;
+            std::cout << "皮卡迭代步: " << picard_iter_count_ << std::endl;
+
+            // 设置标志位
+            if (time_step_count == 1) {
+                is_initial_first_tstep = true;
+                is_initial_step = false;
+            } else {
+                is_initial_step = false;
+                is_initial_first_tstep = false;
+            }
+
+            // 保存上一次的解
+            AutoPetscVec sol_picard_old = createVector(vec_size);
+            VecCopy(getRawVec(solution_), getRawVec(sol_picard_old));
+
+            // 组装矩阵并求解
+            ierr = assembleStiffnessMatrix(is_initial_step, is_initial_first_tstep);
+            CHKERRQ(ierr);
+            ierr = solveWithDirichletBC();
+            CHKERRQ(ierr);
+
+            // 计算误差
+            PetscReal norm_diff;
+            VecAXPY(getRawVec(solution_), -1.0, getRawVec(sol_picard_old));
+            VecNorm(getRawVec(solution_), NORM_2, &norm_diff);
+            VecAXPY(getRawVec(solution_), 1.0, getRawVec(sol_picard_old));
+
+            std::cout << "皮卡迭代误差: " << norm_diff << std::endl;
+
+            // 判断收敛
+            if (norm_diff < picard_tol_) {
+                converged = true;
+                std::cout << "皮卡迭代收敛！" << std::endl;
+            }
+        }
+
+        if (!converged) {
+            std::cerr << "警告：皮卡迭代在 " << picard_max_iter_ << " 步内未收敛！" << std::endl;
+        }
+
+        // 保存当前时刻的解
+        saveSolutionToFile(current_time);
+    }
+
+    std::cout << "\n时间推进完成！" << std::endl;
+    return 0;
+}
