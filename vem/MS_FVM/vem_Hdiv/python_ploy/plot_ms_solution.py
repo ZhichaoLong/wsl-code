@@ -785,7 +785,7 @@ def main():
 
     args = parser.parse_args()
 
-    base_dir = Path("/home/lzccode/code/vem/MS_FVM/vem_Hdiv")
+    base_dir = Path("/20184652/lzc/MScode/vem/MS_FVM/vem_Hdiv")
     output_folder = Path(args.output_folder)
     output_gif = Path(args.output_gif) if args.output_gif else None
     output_mp4 = Path(args.output_mp4) if args.output_mp4 else None
@@ -808,7 +808,12 @@ def main():
 
     # 正常模式：先生成图片再生成视频
     # 确定解目录和网格大小
-    if args.solution_dir:
+    if args.solution_dir and args.grid_size:
+        solution_dir = Path(args.solution_dir)
+        grid_size = args.grid_size
+        print(f"使用指定的解目录: {solution_dir.name}")
+        print(f"使用指定的网格大小: {grid_size}x{grid_size}")
+    elif args.solution_dir:
         solution_dir = Path(args.solution_dir)
         # 从目录名识别网格大小
         dir_name = solution_dir.name
@@ -839,7 +844,7 @@ def main():
         else:
             raise ValueError("未找到解目录，请手动指定 --grid-size 或 --solution-dir")
 
-    mesh_filename = base_dir.parent / f"meshdata/mesh_{grid_size}x{grid_size}.txt"
+    mesh_filename = base_dir.parent / "meshdata" / f"mesh_{grid_size}x{grid_size}.txt"
 
     print(f"网格文件: {mesh_filename}")
     print(f"解目录: {solution_dir}")

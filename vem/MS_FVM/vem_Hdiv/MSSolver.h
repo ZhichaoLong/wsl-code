@@ -134,10 +134,10 @@ public:
     PetscErrorCode solveWithDirichletBC_cuda_schur();
     PetscErrorCode solveWithDirichletBC_schur();
     // 时间推进求解（含皮卡迭代）
-    PetscErrorCode solveTimeStepping();
+    PetscErrorCode solveTimeStepping(std::string folder_name = "solution_poly_disc");
 
     // 保存解向量到文件
-    void saveSolutionToFile(double time) const;
+    void saveSolutionToFile(double time, std::string folder_name) const;
 
     // 计算粗细网格的浓度L2误差（用于估计收敛阶）
     // 返回值：每个组分一个误差值，共n_comp_个
