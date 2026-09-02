@@ -1,0 +1,275 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{mathrsfs}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue}
+\newcommand{\divop}{\nabla\cdot}
+\newcommand{\grad}{\nabla}
+\newcommand{\rotop}{\nabla\times}
+\newcommand{\dt}{\partial_t}
+\newcommand{\norm}[1]{\left\|#1\right\|}
+\newcommand{\inner}[2]{\left(#1,#2\right)}
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\Ppoly}{\mathbb{P}}
+\newcommand{\Hdiv}{H(\mathrm{div},\Omega)}
+\newcommand{\Hdivzero}{\mathring{H}(\mathrm{div},\Omega)}
+\newcommand{\xhat}{\hat{\xi}}
+\newcommand{\Ehat}{\hat{E}}
+\newcommand{\Jmat}{\boldsymbol{J}}
+\newcommand{\detJ}{\det(\Jmat)}
+\newcommand{\nhat}{\hat{\boldsymbol{n}}}
+\newcommand{\Vh}{\hat{V}_h}
+\newcommand{\Qh}{\hat{Q}_h}
+\newcommand{\Pik}{\Pi_k^0}
+\begin{document}
+\title{曲边等参混合$H(\mathrm{div})$虚拟元求解时变Maxwell–Stefan方程完整推导}
+\author{}
+\date{}
+\maketitle
+\section{控制方程与时变连续混合变分体系（含体积源项$f_i$）}
+\subsection{修正Maxwell–Stefan强形式}
+二维光滑曲边多边形物理域$\Omega$，边界划分为通量边界$\Gamma_N$（Neumann）与浓度边界$\Gamma_D$（Dirichlet）；
+$\boldsymbol{u}=(u_1,\dots,u_n)$为组分体积分数标量场，$\boldsymbol{J}=(J_1,\dots,J_n)$为组分扩散通量向量场；
+$c^*,\bar{c}_{ij}$为二元扩散常数，$\bar{A}_{ij}(\boldsymbol{u})$为非线性扩散矩阵；$f_i\in L^2(\Omega)$为组分体积源/反应项。
+强形式方程组：
+\begin{equation}\label{eq:ms-strong}
+\begin{cases}
+\dt u_i + \divop J_i = f_i, & \text{质量守恒（含源项）}\\
+\grad u_i + c^* J_i + \displaystyle\sum_{j=1}^n \bar{A}_{ij}(\boldsymbol{u}) J_j = 0, & \text{MS扩散本构}\\
+J_i\cdot \boldsymbol{n} = g_{N,i}, & \text{on } \Gamma_N\\
+u_i = g_{D,i}, & \text{on } \Gamma_D
+\end{cases}
+\end{equation}
+分解扩散矩阵：$\bar{A}(\boldsymbol{u}) = c^*\boldsymbol{I} + A(\boldsymbol{u})$，$A(\boldsymbol{u})$仅含交叉扩散非线性项。
+\subsection{函数空间定义}
+通量检验空间（齐次Neumann边界）：
+\begin{equation}
+V = \left\{\boldsymbol{v}\in \Hdiv^n \;\bigg|\; v_i\cdot\boldsymbol{n}=0,\;\forall i,\;\text{on }\Gamma_N\right\}
+\end{equation}
+浓度空间：$Q = L^2(\Omega)^n$；$\boldsymbol{v}=(v_1,\dots,v_n),\boldsymbol{q}=(q_1,\dots,q_n)$为检验函数。
+\subsection{连续混合变分格式}
+对守恒方程乘$q_i$积分、本构方程乘$v_i$积分并分部积分，得到连续鞍点变分问题：
+求$(\boldsymbol{J},\boldsymbol{u})\in V\times Q$，满足$\forall \boldsymbol{v}\in V,\forall \boldsymbol{q}\in Q$：
+\begin{equation}\label{eq:cont-variational}
+\begin{cases}
+\mathcal{C}(\boldsymbol{J},\boldsymbol{v}) + \mathcal{A}(\boldsymbol{u};\boldsymbol{J},\boldsymbol{v}) - \mathcal{B}(\boldsymbol{v},\boldsymbol{u}) = F_V(\boldsymbol{v}),\\
+\mathcal{M}(\dt \boldsymbol{u},\boldsymbol{q}) + \mathcal{B}(\boldsymbol{J},\boldsymbol{q}) = F_Q(\boldsymbol{q}).
+\end{cases}
+\end{equation}
+定义全局连续双线性/三线性型与右端泛函：
+\begin{align}
+\mathcal{C}(\boldsymbol{J},\boldsymbol{v}) &= c^*\sum_{i=1}^n \int_\Omega J_i\cdot v_i \,dx, \tag{线性扩散刚度}\\
+\mathcal{A}(\boldsymbol{u};\boldsymbol{J},\boldsymbol{v}) &= \sum_{i,j=1}^n \int_\Omega A_{ij}(\boldsymbol{u}) J_j\cdot v_i \,dx, \tag{非线性交叉扩散}\\
+\mathcal{B}(\boldsymbol{v},\boldsymbol{q}) &= \sum_{i=1}^n \int_\Omega q_i \divop v_i \,dx, \tag{散度耦合项}\\
+\mathcal{M}(\dt \boldsymbol{u},\boldsymbol{q}) &= \sum_{i=1}^n \int_\Omega \dt u_i \,q_i \,dx, \tag{时间质量内积}\\
+F_Q(\boldsymbol{q}) &= \sum_{i=1}^n \int_\Omega f_i q_i \,dx, \tag{体积源右端项}\\
+F_V(\boldsymbol{v}) &= -\sum_{i=1}^n \int_{\Gamma_D} g_{D,i}\,v_i\cdot\boldsymbol{n}\,ds. \tag{Dirichlet边界载荷}
+\end{align}
+\section{曲边单元等参几何映射（复用Darcy框架）}
+\subsection{参考元与物理曲单元微分同胚}
+标准参考元$\Ehat=[0,1]^2$，局部坐标$\xhat=(\xi,\eta)$；曲单元$\Omega_E$，光滑微分同胚映射$\boldsymbol{x}(\xhat):\Ehat\to\Omega_E$，雅可比矩阵：
+\begin{equation}
+\Jmat(\xhat) = \nabla_{\xhat}\boldsymbol{x} = \begin{pmatrix}
+\partial_\xi x & \partial_\eta x\\
+\partial_\xi y & \partial_\eta y
+\end{pmatrix},\quad
+dx = \detJ \,d\xhat,\quad \detJ>0.
+\end{equation}
+度量张量$\Jmat^T\Jmat$，逆矩阵$\Jmat^{-1}$。
+\subsection{标量浓度场拉回变换}
+$u_i$为标量场，直接拉回至参考元：
+\begin{equation}
+u_i(\boldsymbol{x}) = \hat{u}_i(\xhat),\quad
+\grad_{\boldsymbol{x}}u_i = (\Jmat^{-1})^T \grad_{\xhat} \hat{u}_i.
+\end{equation}
+\subsection{通量$\boldsymbol{J}_i$的Piola逆变变换（$H(\mathrm{div})$协调）}
+为保证单元界面法向通量连续，通量采用Piola变换：
+\begin{equation}\label{eq:piola-map}
+\boldsymbol{J}_i(\boldsymbol{x}) = \mathcal{F}_{\mathrm{div}}[\hat{\boldsymbol{J}}_i(\xhat)] = \frac{1}{\detJ}\Jmat(\xhat) \hat{\boldsymbol{J}}_i(\xhat).
+\end{equation}
+Piola散度恒等式（核心化简关系）：
+\begin{equation}\label{eq:piola-div}
+\divop_{\boldsymbol{x}} \boldsymbol{J}_i = \frac{1}{\detJ} \hat{\divop}_{\xhat} \hat{\boldsymbol{J}}_i.
+\end{equation}
+\subsection{曲边界Nanson积分变换}
+曲边法向量与弧长微元变换：
+\begin{equation}
+\boldsymbol{n}(\boldsymbol{x}) ds = \detJ (\Jmat^{-1})^T \nhat \,d\hat{s},
+\end{equation}
+分离单位法向量与弧长微元：
+\begin{equation}
+ds = \detJ\left\|(\Jmat^{-1})^T \nhat\right\| d\hat{s},\quad
+\boldsymbol{n}(\boldsymbol{x}) = \frac{(\Jmat^{-1})^T \nhat}{\left\|(\Jmat^{-1})^T \nhat\right\|}.
+\end{equation}
+$\nhat$为参考单元边界单位法向量，所有曲边界积分可拉回至参考直边界$\hat{\Gamma}_D,\hat{\Gamma}_N$计算。
+\section{双线性/三线性型单元拉回至参考元$\Ehat$}
+全域积分分解：$\int_\Omega = \sum_E \int_{\Omega_E}$，逐单元做坐标变换，定义参考域离散型$\hat{\mathcal{C}}_E,\hat{\mathcal{A}}_E,\hat{\mathcal{B}}_E,\hat{\mathcal{M}}_E,\hat{F}_{V,E},\hat{F}_{Q,E}$。
+\subsection{线性扩散项$\mathcal{C}_E(\boldsymbol{J},\boldsymbol{v})$拉回}
+代入Piola变换与$dx=\detJ d\xhat$：
+\begin{align*}
+\mathcal{C}_E(\boldsymbol{J},\boldsymbol{v}) &= c^*\sum_i \int_{\Omega_E} \boldsymbol{J}_i\cdot \boldsymbol{v}_i \,dx \\
+&= c^*\sum_i \int_{\Ehat} \left(\frac{\Jmat\hat{\boldsymbol{J}}_i}{\detJ}\right)\cdot\left(\frac{\Jmat\hat{\boldsymbol{v}}_i}{\detJ}\right) \detJ d\xhat \\
+&= \sum_i \int_{\Ehat} \underbrace{\frac{c^*}{\detJ}\Jmat^T \Jmat}_{\mathbb{K}_{\xi}^C(\xhat)} \hat{\boldsymbol{J}}_i \cdot \hat{\boldsymbol{v}}_i \,d\xhat = \hat{\mathcal{C}}_E(\hat{\boldsymbol{J}},\hat{\boldsymbol{v}}).
+\end{align*}
+$\mathbb{K}_{\xi}^C$为曲几何修正权重张量。
+\subsection{非线性交叉扩散三线性型$\mathcal{A}_E(\boldsymbol{u};\boldsymbol{J},\boldsymbol{v})$拉回}
+$A_{ij}(\boldsymbol{x})=A_{ij}(\hat{\boldsymbol{u}}(\xhat))$为标量系数，同理变换：
+\begin{align*}
+\mathcal{A}_E(\boldsymbol{u};\boldsymbol{J},\boldsymbol{v}) &= \sum_{i,j}\int_{\Omega_E} A_{ij}(\boldsymbol{u}) \boldsymbol{J}_j\cdot \boldsymbol{v}_i dx \\
+&= \sum_{i,j}\int_{\Ehat} A_{ij}(\hat{\boldsymbol{u}}) \cdot \frac{1}{\detJ}\hat{\boldsymbol{J}}_j^T \Jmat^T \Jmat \hat{\boldsymbol{v}}_i \,d\xhat \\
+&= \sum_{i,j}\int_{\Ehat} \underbrace{\frac{A_{ij}(\hat{\boldsymbol{u}})}{\detJ}\Jmat^T\Jmat}_{\mathbb{K}_{\xi}^{A,ij}(\xhat)} \hat{\boldsymbol{J}}_j \cdot \hat{\boldsymbol{v}}_i d\xhat = \hat{\mathcal{A}}_E(\hat{\boldsymbol{u}};\hat{\boldsymbol{J}},\hat{\boldsymbol{v}}).
+\end{align*}
+\subsection{散度耦合项$\mathcal{B}_E(\boldsymbol{v},\boldsymbol{q})$拉回（无几何修正）}
+利用Piola散度恒等式，$\detJ$完全抵消：
+\begin{align*}
+\mathcal{B}_E(\boldsymbol{v},\boldsymbol{q}) &= \sum_i \int_{\Omega_E} q_i \divop \boldsymbol{v}_i dx \\
+&= \sum_i \int_{\Ehat} \hat{q}_i \cdot \frac{1}{\detJ}\hat{\divop}\hat{\boldsymbol{v}}_i \cdot \detJ d\xhat \\
+&= \sum_i \int_{\Ehat} \hat{q}_i \hat{\divop}\hat{\boldsymbol{v}}_i d\xhat = \hat{\mathcal{B}}_E(\hat{\boldsymbol{v}},\hat{\boldsymbol{q}}).
+\end{align*}
+\textbf{关键结论}：曲单元与直单元耦合积分公式完全一致，无额外几何修正项。
+\subsection{时间质量项$\mathcal{M}_E(\dt \boldsymbol{u},\boldsymbol{q})$拉回}
+浓度为标量，积分带雅可比权重：
+\begin{align*}
+\mathcal{M}_E(\dt \boldsymbol{u},\boldsymbol{q}) &= \sum_i \int_{\Omega_E} \dt u_i \,q_i dx \\
+&= \sum_i \int_{\Ehat} \dt \hat{u}_i \,\hat{q}_i \,\detJ(\xhat) d\xhat = \hat{\mathcal{M}}_E(\dt \hat{\boldsymbol{u}},\hat{\boldsymbol{q}}).
+\end{align*}
+\subsection{体积源项右端$\hat{F}_{Q,E}$}
+\begin{equation*}
+F_{Q,E}(\boldsymbol{q}) = \sum_i \int_{\Omega_E} f_i q_i dx = \sum_i \int_{\Ehat} f_i(\boldsymbol{x}(\xhat)) \hat{q}_i \,\detJ d\xhat = \hat{F}_{Q,E}(\hat{\boldsymbol{q}}).
+\end{equation*}
+\subsection{Dirichlet曲边界载荷$\hat{F}_{V,E}$化简}
+代入Nanson公式与Piola变换，$\detJ$全部约去：
+\begin{align*}
+F_{V,E}(\boldsymbol{v}) &= -\sum_i \int_{\Gamma_{D,E}} g_{D,i}\, \boldsymbol{v}_i\cdot\boldsymbol{n}\,ds \\
+&= -\sum_i \int_{\hat{\Gamma}_{D,E}} g_{D,i}(\boldsymbol{x}(\xhat)) \left(\frac{\Jmat\hat{\boldsymbol{v}}_i}{\detJ}\right) \cdot \detJ(\Jmat^{-1})^T \nhat d\hat{s} \\
+&= -\sum_i \int_{\hat{\Gamma}_{D,E}} g_{D,i}\,\hat{\boldsymbol{v}}_i\cdot \nhat \,d\hat{s} = \hat{F}_{V,E}(\hat{\boldsymbol{v}}).
+\end{align*}
+\section{曲边混合虚拟元离散空间（参考元定义）}
+\subsection{通量离散空间$\Vh(\Ehat)$（单组分，多组分直积）}
+\begin{equation}
+\Vh(\Ehat) = \left\{\hat{\boldsymbol{v}} \;\bigg|\;
+\begin{aligned}
+&\hat{\boldsymbol{v}}\cdot\nhat \in \Ppoly_k(\hat{e}),\;\forall \text{参考边}\hat{e},\\
+&\hat{\divop}\hat{\boldsymbol{v}} \in \Ppoly_{k-1}(\Ehat),\;\hat{\rotop}\hat{\boldsymbol{v}} \in \Ppoly_{k-1}(\Ehat)
+\end{aligned}
+\right\}
+\end{equation}
+单元三类自由度：
+\begin{enumerate}
+\item 边矩：$\displaystyle\int_{\hat{e}} \hat{\boldsymbol{v}}\cdot\nhat \,q(\xhat)d\hat{s},\;q\in\Ppoly_k(\hat{e})$；
+\item 梯度内部矩：$\displaystyle\int_{\Ehat} \hat{\boldsymbol{v}}\cdot\grad m d\xhat,\;m\in\Ppoly_{k-1}$；
+\item 旋度内部矩：$\displaystyle\int_{\Ehat} \rotop\hat{\boldsymbol{v}} \,q d\xhat,\;q\in\Ppoly_{k-1}$。
+\end{enumerate}
+\subsection{浓度离散空间$\Qh(\Ehat)$}
+\begin{equation}
+\Qh(\Ehat) = \Ppoly_{k-1}(\Ehat),
+\end{equation}
+分片多项式，无跨单元连续性，单元自由度为$\dim\Ppoly_{k-1}$。
+\subsection{Helmholtz分解与加权$L^2$多项式投影}
+任意通量基函数$\hat{\phi}_i\in\Vh$分解为多项式相容部分+虚拟不稳定部分：
+\begin{equation}
+\hat{\phi}_i = \Pik \hat{\phi}_i + (I-\Pik)\hat{\phi}_i.
+\end{equation}
+曲单元加权正交条件（带雅可比权重$\detJ$）：
+\begin{equation}
+\int_{\Ehat} \big(\hat{\phi}_i - \Pik \hat{\phi}_i\big)\cdot \boldsymbol{r}\; \detJ(\xhat) d\xhat = 0,\quad \forall \boldsymbol{r}\in[\Ppoly_k(\Ehat)]^2.
+\end{equation}
+\section{曲单元加权$L^2$投影算子代数求解}
+\subsection{多项式空间直和分解}
+\begin{equation}
+[\Ppoly_k(\Ehat)]^2 = \mathcal{G}_k \oplus \mathcal{G}_k^\perp,\quad \mathcal{G}_k=\grad\Ppoly_{k+1},\;\mathcal{G}_k^\perp=\rotop\Ppoly_{k+1}.
+\end{equation}
+取多项式标准基$\{g_I\} = \{g_\alpha^\nabla,g_\gamma^\perp\}$。
+\subsection{加权质量矩阵与投影线性方程组}
+设$\Pik \hat{\phi}_i = \sum_I s_i^I g_I$，由正交条件得：
+\begin{equation}
+\sum_I \left( \int_{\Ehat} g_I\cdot g_J \;\detJ(\xhat) d\xhat \right) s_i^I = \int_{\Ehat} \hat{\phi}_i\cdot g_J \;\detJ(\xhat) d\xhat.
+\end{equation}
+定义曲单元加权质量矩阵$G$、右端矩阵$B$：
+\begin{equation}
+G_{IJ} = \int_{\Ehat} g_I\cdot g_J \,\detJ d\xhat,\quad B_{Ji} = \int_{\Ehat} \hat{\phi}_i\cdot g_J \,\detJ d\xhat.
+\end{equation}
+矩阵形式：$G \boldsymbol{\Pi}_k^{*0} = B \implies \boldsymbol{\Pi}_k^{*0} = G^{-1}B$。
+自由度转换矩阵$D_{jI} = \mathrm{dof}_j(g_I)$，投影算子显式表达式：
+\begin{equation}
+\Pik = D\,G^{-1}\,B.
+\end{equation}
+\section{单元离散双线性/三线性型（相容项+稳定项）}
+采用向后欧拉时间离散：$\delta_t \hat{u}_i^n = \dfrac{\hat{u}_i^n - \hat{u}_i^{n-1}}{\Delta t}$。
+\subsection{线性扩散离散型$\hat{\mathscr{C}}_E$}
+\begin{align*}
+\hat{\mathscr{C}}_E(\hat{\boldsymbol{J}}_h,\hat{\boldsymbol{v}}_h)
+&= \int_{\Ehat} \mathbb{K}_\xi^C \big(\Pik \hat{\boldsymbol{J}}_h\big)\cdot \big(\Pik \hat{\boldsymbol{v}}_h\big) d\xhat \\
+&\quad + c^* \bar{\kappa}_E \,|\Ehat|\cdot \mathcal{S}^E\big((I-\Pik)\hat{\boldsymbol{J}}_h,(I-\Pik)\hat{\boldsymbol{v}}_h\big).
+\end{align*}
+第一项为相容刚度，第二项为虚拟元稳定项；$\bar{\kappa}_E$为单元平均扩散系数，$\mathcal{S}^E$为单元稳定双线性型。
+\subsection{非线性交叉扩散离散三线性型$\hat{\mathscr{A}}_E$}
+\begin{enumerate}
+\item $i=j$（自扩散，含稳定项）
+\begin{align*}
+\hat{\mathscr{A}}_{ii,E}(\hat{\boldsymbol{u}}_h;\hat{\boldsymbol{J}}_{i,h},\hat{\boldsymbol{v}}_{i,h})
+&= \int_{\Ehat} \mathbb{K}_\xi^{A,ii} \big(\Pik \hat{\boldsymbol{J}}_{i,h}\big)\cdot\big(\Pik \hat{\boldsymbol{v}}_{i,h}\big)d\xhat \\
+&\quad + |A_{ii}(\hat{\boldsymbol{u}}_h)| \bar{\kappa}_E |\Ehat| \mathcal{S}^E\big((I-\Pik)\hat{\boldsymbol{J}}_{i,h},(I-\Pik)\hat{\boldsymbol{v}}_{i,h}\big);
+\end{align*}
+\item $i\neq j$（交叉扩散，无稳定项）
+\begin{equation*}
+\hat{\mathscr{A}}_{ij,E}(\hat{\boldsymbol{u}}_h;\hat{\boldsymbol{J}}_{j,h},\hat{\boldsymbol{v}}_{i,h})
+= \int_{\Ehat} \mathbb{K}_\xi^{A,ij} \big(\Pik \hat{\boldsymbol{J}}_{j,h}\big)\cdot\big(\Pik \hat{\boldsymbol{v}}_{i,h}\big)d\xhat.
+\end{equation*}
+\end{enumerate}
+\subsection{散度耦合离散型$\hat{\mathscr{B}}_E$}
+\begin{equation*}
+\hat{\mathscr{B}}_E(\hat{\boldsymbol{v}}_h,\hat{\boldsymbol{q}}_h) = \sum_i \int_{\Ehat} \hat{q}_{i,h}\;\hat{\divop} \hat{\boldsymbol{v}}_{i,h}\;d\xhat.
+\end{equation*}
+离散耦合矩阵元素：$W_{\alpha i} = \hat{\mathscr{B}}_E(\hat{\phi}_i,\hat{q}_\alpha)$。
+\subsection{时间质量离散型$\hat{\mathscr{M}}_E$}
+\begin{equation*}
+\hat{\mathscr{M}}_E(\delta_t \hat{\boldsymbol{u}}_h^n,\hat{\boldsymbol{q}}_h) = \sum_i \int_{\Ehat} \delta_t \hat{u}_{i,h}^n \;\hat{q}_{i,h}\;\detJ(\xhat) d\xhat.
+\end{equation*}
+\subsection{单元右端载荷向量}
+\begin{equation*}
+\hat{\boldsymbol{F}}_E = \begin{bmatrix}
+\hat{F}_{V,E}(\hat{\phi}_i) \\
+\hat{F}_{Q,E}(\hat{q}_\alpha) - \hat{\mathscr{M}}_E(\hat{\boldsymbol{u}}_h^{n-1},\hat{q}_\alpha)
+\end{bmatrix},
+\end{equation*}
+上块为Dirichlet边界载荷，下块为体积源项减去上一时间层质量贡献。
+\section{单元局部鞍点矩阵与全局组装流程}
+\subsection{单单元局部离散矩阵分块}
+设单元通量自由度$N_J$，浓度自由度$N_u$，单元局部鞍点矩阵：
+\begin{equation}
+\boldsymbol{K}_E = \begin{bmatrix}
+\boldsymbol{K}_C + \boldsymbol{K}_S & -\boldsymbol{W}^T \\
+\boldsymbol{W} & \Delta t^{-1}\boldsymbol{M}_E
+\end{bmatrix},
+\end{equation}
+其中：
+\begin{itemize}
+\item $\boldsymbol{K}_C$：相容扩散刚度（$\hat{\mathscr{C}}+\hat{\mathscr{A}}$多项式部分）；
+\item $\boldsymbol{K}_S$：虚拟元稳定刚度；
+\item $\boldsymbol{W}$：散度耦合矩阵；
+\item $\boldsymbol{M}_E$：曲单元加权质量矩阵（含$\detJ$权重）。
+\end{itemize}
+\subsection{全局数值实现步骤}
+\begin{enumerate}
+\item 网格预处理：构造参考元网格，定义曲边等参映射$\boldsymbol{x}(\xhat)$，预计算各单元$\Jmat,\detJ,\mathbb{K}_{\xi}^C,\mathbb{K}_{\xi}^{A,ij}$；
+\item 高斯积分模块：实现二维单元体积积分（带$\detJ$权重）、曲边界线积分（Nanson拉回参考边）；
+\item 生成单元多项式单项式基，求解加权$L^2$投影矩阵$\Pik$；
+\item 组装单元相容刚度$\boldsymbol{K}_C$、稳定刚度$\boldsymbol{K}_S$、耦合矩阵$\boldsymbol{W}$、质量矩阵$\boldsymbol{M}_E$；
+\item 计算单元载荷$\hat{\boldsymbol{F}}_E$：体积源$f_i$积分+Dirichlet曲边界积分；
+\item 建立局部-全局自由度映射，累加局部矩阵至全局稀疏矩阵；
+\item Dirichlet边界自由度分块消元，缩减鞍点线性系统；
+\item GMRES+ILU预条件迭代求解离散方程组；
+\item 解拉回至物理域，计算$L^2$误差与收敛阶验证。
+\end{enumerate}
+\section{核心对比结论（曲边MS-VEM vs 曲边Darcy VEM）}
+\begin{enumerate}
+\item 几何映射体系完全复用：Piola矢量变换、标量拉回、Nanson曲边界积分无需修改，仅新增非线性交叉扩散几何权重张量$\mathbb{K}_{\xi}^{A,ij}$；
+\item 散度耦合项无几何修正：$\mathcal{B}(\boldsymbol{v},\boldsymbol{q})$曲/直单元积分公式统一，为混合$H(\mathrm{div})$虚拟元通用优势；
+\item $L^2$投影仅增加雅可比权重：质量矩阵附加$\detJ(\xhat)$，投影代数求解框架不变；
+\item 新增时变质量项与体积源项：引入带几何权重的质量矩阵$\boldsymbol{M}_E$、源泛函$F_Q$，形成时变鞍点系统；
+\item 非线性稳定项差异化构造：仅自扩散项附加稳定子，交叉扩散无稳定项，继承直多边形MS-VEM理论结构。
+\end{enumerate}
+\end{document}
