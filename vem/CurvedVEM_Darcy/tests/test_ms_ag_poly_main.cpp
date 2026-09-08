@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
     std::vector<double> u_ploy_coeff(n_comp * dof_conc, 0.0);
     for (int c = 0; c < n_comp; ++c) {
         double c0 = pde.initial_concentration_comp(
-            c, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
+            c, elem, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
         u_ploy_coeff[c * dof_conc + 0] = c0;  // 常数项
         // 高阶项（x, y, x^2, ...）系数为 0
     }
@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
             }
 
             double Aij = pde.evaluate_A_comp_initial(
-                i, j, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
+                i, j, elem, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
             std::cout << "AG[" << i << "," << j << "]: "
                       << "max|AG_init - AG_poly| = " << max_diff
                       << "  (A_ij ≈ " << Aij << ")\n";

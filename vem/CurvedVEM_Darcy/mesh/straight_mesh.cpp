@@ -40,6 +40,178 @@ bool StraightMeshReader::read_mesh(const std::string& filename) {
     return true;
 }
 
+// ============================================================================
+// VTK 读取路径
+//
+// 只有「解析」这一步与 msh 不同，后处理链完全复用 read_mesh 的四个私有函数，
+// 保证 get_mesh_data() 返回的 StraightMeshData 语义两条路径一致。
+// ============================================================================
+
+namespace {
+
+// 在流中向前扫描到指定关键字 token；命中时流停在该 token 之后。
+// VTK 的头部是自由格式文本，按 token 扫描比按行匹配更不容易被空行/大小写坑到。
+bool seek_token(std::istream& in, const std::string& keyword) {
+    std::string tok;
+    while (in >> tok) {
+        if (tok == keyword) return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+bool StraightMeshReader::read_mesh_vtk(const std::string& filename) {
+    mesh_data_.clear();
+
+    if (!read_vtk_nodes_and_cells(filename)) {
+        std::cerr << "Error: Failed to read VTK mesh from " << filename << std::endl;
+        return false;
+    }
+
+    if (!compute_cell_properties()) {
+        std::cerr << "Error: Failed to compute cell properties" << std::endl;
+        return false;
+    }
+
+    if (!generate_element_edges()) {
+        std::cerr << "Error: Failed to generate element edges" << std::endl;
+        return false;
+    }
+
+    if (!compute_boundary_info()) {
+        std::cerr << "Error: Failed to compute boundary info" << std::endl;
+        return false;
+    }
+
+    std::cout << "Successfully read VTK mesh: " << mesh_data_.num_nodes << " nodes, "
+              << mesh_data_.num_cells << " cells, " << mesh_data_.num_edges << " edges." << std::endl;
+    return true;
+}
+
+bool StraightMeshReader::read_vtk_nodes_and_cells(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Cannot open file " << filename << std::endl;
+        return false;
+    }
+
+    // ---- POINTS <n> <datatype> ----
+    if (!seek_token(file, "POINTS")) {
+        std::cerr << "Error: POINTS section not found in VTK file!" << std::endl;
+        return false;
+    }
+
+    int num_nodes = 0;
+    std::string datatype;
+    if (!(file >> num_nodes >> datatype) || num_nodes <= 0) {
+        std::cerr << "Error: Invalid POINTS header!" << std::endl;
+        return false;
+    }
+
+    mesh_data_.num_nodes = num_nodes;
+    mesh_data_.node_coords.assign(2 * num_nodes, 0.0);
+    for (int i = 0; i < num_nodes; ++i) {
+        double x, y, z;
+        // VTK 强制三分量；本项目是二维问题，z 读出来直接丢弃
+        if (!(file >> x >> y >> z)) {
+            std::cerr << "Error: Failed to read point " << i << std::endl;
+            return false;
+        }
+        mesh_data_.node_coords[2 * i] = x;
+        mesh_data_.node_coords[2 * i + 1] = y;
+    }
+
+    // ---- CELLS <m> <整数总个数> ----
+    if (!seek_token(file, "CELLS")) {
+        std::cerr << "Error: CELLS section not found in VTK file!" << std::endl;
+        return false;
+    }
+
+    int num_cells = 0, total_ints = 0;
+    if (!(file >> num_cells >> total_ints) || num_cells <= 0) {
+        std::cerr << "Error: Invalid CELLS header!" << std::endl;
+        return false;
+    }
+
+    mesh_data_.num_cells = num_cells;
+    mesh_data_.nodes_per_cell.reserve(num_cells);
+    mesh_data_.cell_node_indices.reserve(num_cells + 1);
+    mesh_data_.cell_nodes.reserve(total_ints > num_cells ? total_ints - num_cells : 0);
+    mesh_data_.cell_node_indices.push_back(0);
+
+    int running_offset = 0;
+    for (int e = 0; e < num_cells; ++e) {
+        int nv = 0;
+        if (!(file >> nv)) {
+            std::cerr << "Error: Failed to read vertex count of cell " << e << std::endl;
+            return false;
+        }
+        if (nv < 3) {
+            std::cerr << "Error: Cell " << e << " has " << nv
+                      << " vertices, expected >= 3" << std::endl;
+            return false;
+        }
+
+        std::vector<int> nodes(nv);
+        for (int i = 0; i < nv; ++i) {
+            if (!(file >> nodes[i])) {
+                std::cerr << "Error: Failed to read vertex " << i << " of cell " << e << std::endl;
+                return false;
+            }
+            if (nodes[i] < 0 || nodes[i] >= num_nodes) {
+                std::cerr << "Error: Cell " << e << " references node " << nodes[i]
+                          << " out of range (0~" << num_nodes - 1 << ")" << std::endl;
+                return false;
+            }
+        }
+
+        // VTK 不保证顶点顺序，与 msh 路径一致地统一成逆时针
+        reorder_polygon_to_ccw(nodes, mesh_data_.node_coords);
+
+        mesh_data_.nodes_per_cell.push_back(nv);
+        mesh_data_.cell_nodes.insert(mesh_data_.cell_nodes.end(), nodes.begin(), nodes.end());
+        running_offset += nv;
+        mesh_data_.cell_node_indices.push_back(running_offset);
+    }
+
+    // ---- CELL_TYPES <m> ----
+    // 必须校验：若文件里混进了三维单元或高阶单元，顶点表语义就不再是
+    // 「逆时针多边形环」，后面的 generate_element_edges 会算出错误的边而不报错。
+    if (!seek_token(file, "CELL_TYPES")) {
+        std::cerr << "Error: CELL_TYPES section not found in VTK file!" << std::endl;
+        return false;
+    }
+
+    int num_types = 0;
+    if (!(file >> num_types)) {
+        std::cerr << "Error: Invalid CELL_TYPES header!" << std::endl;
+        return false;
+    }
+    if (num_types != num_cells) {
+        std::cerr << "Error: CELL_TYPES count " << num_types
+                  << " does not match CELLS count " << num_cells << std::endl;
+        return false;
+    }
+
+    for (int e = 0; e < num_cells; ++e) {
+        int cell_type = 0;
+        if (!(file >> cell_type)) {
+            std::cerr << "Error: Failed to read cell type " << e << std::endl;
+            return false;
+        }
+        // 5 = VTK_TRIANGLE, 7 = VTK_POLYGON, 9 = VTK_QUAD
+        if (cell_type != 5 && cell_type != 7 && cell_type != 9) {
+            std::cerr << "Error: Cell " << e << " has unsupported VTK type " << cell_type
+                      << " (expected 5, 7 or 9)" << std::endl;
+            return false;
+        }
+    }
+
+    compute_mesh_bounds();
+    return true;
+}
+
 bool StraightMeshReader::read_coords(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {

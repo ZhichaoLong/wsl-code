@@ -98,6 +98,23 @@ void writeCurvedEdges(std::ofstream& output,
                       int samples_per_edge) {
     output << "edge,point,x,y\n";
     output << std::setprecision(17);
+
+    // 映射现在按单元区分，而这里是按边遍历，需要先建一张
+    // 边 -> 所属单元 的表（内部边取第一个出现它的单元）
+    std::vector<int> edge_owner_cell(mesh.num_edges, -1);
+    for (int cell = 0; cell < mesh.num_cells; ++cell) {
+        const int start = mesh.cell_edge_indices[cell];
+        const int count = mesh.nodes_per_cell[cell];
+        for (int le = 0; le < count; ++le) {
+            const int ge = mesh.global_edges[start + le];
+            if (edge_owner_cell[ge] < 0) edge_owner_cell[ge] = cell;
+        }
+    }
+    // 理论上每条边至少属于一个单元；万一有孤立边，退回 0 号单元
+    for (int e = 0; e < mesh.num_edges; ++e) {
+        if (edge_owner_cell[e] < 0) edge_owner_cell[e] = 0;
+    }
+
     for (int edge = 0; edge < mesh.num_edges; ++edge) {
         const int node0 = mesh.edge_endpoints[2 * edge];
         const int node1 = mesh.edge_endpoints[2 * edge + 1];
@@ -110,7 +127,7 @@ void writeCurvedEdges(std::ofstream& output,
             const double xi = (1.0 - t) * xi0 + t * xi1;
             const double eta = (1.0 - t) * eta0 + t * eta1;
             const MaxwellStefan::Point2D physical =
-                mapping.physical_coords(xi, eta);
+                mapping.physical_coords(edge_owner_cell[edge], xi, eta);
             output << edge << ',' << point << ','
                    << physical.x << ',' << physical.y << '\n';
         }
@@ -236,7 +253,7 @@ int main(int argc, char** argv) {
                         const vem::basis::Point2D comp_point(xi, eta);
 
                         const MaxwellStefan::Point2D physical =
-                            mapping.physical_coords(xi, eta);
+                            mapping.physical_coords(elem, xi, eta);
 
                         SamplePoint sp;
                         sp.cell = elem;
@@ -319,7 +336,7 @@ int main(int argc, char** argv) {
                      << sp.x << ',' << sp.y;
                 for (int c = 0; c < n_comp; ++c) {
                     double val = pde.initial_concentration_comp(
-                        c, sp.xi, sp.eta);
+                        c, sp.cell, sp.xi, sp.eta);
                     file << ',' << val;
                 }
                 file << '\n';

@@ -1,6 +1,6 @@
 /**
- * CurvedVEM MS - BDF2 空间收敛阶主程序入口（浓度 + 通量）
- * 功能：Maxwell-Stefan 制造解算例（problem_index = 2），
+ * CurvedVEM MS - BDF2 空间收敛阶主程序入口（算例 4：TriBlockSwirl 逐单元 Q8 映射）
+ * 功能：Maxwell-Stefan 制造解算例（problem_index = 4），
  *       用 BDF2 时间格式（第一步 BDF1 启动），时间步长随网格加密而减小，
  *       在多套网格上计算浓度与通量 L2 误差及空间收敛阶。
  *
@@ -18,7 +18,15 @@
  *       且 dt 一定是有限小数、尾数只由 2 和 5 组成（5e-3 / 2.5e-3 / 1.25e-3 / 5e-4）。
  *       步数下界取 2，是为了保证 BDF2 本身被真正用到（第 1 步是 BDF1 启动）。
  *
- * 配置：k=1, T=1e-1, 网格 2x2~128x128（meshes = {1,2,4,8,16,32,64}，square_nxn 给 2n×2n 单元）
+ * 与 MS_curved_bdf2_main.cpp 的唯一区别是映射：那个用全局连续的 SinPerturbation，
+ *       这个用逐单元 Q8 的 TriBlockSwirl（真三块 + 全局 swirl，雅可比跨每条边都跳变）。
+ *       PDE 数据、时间格式、步长取法、误差度量一字不差，所以两张误差表可以直接横向对比。
+ *
+ * 关键：TriBlockSwirlMapping 需要直边网格来建每个单元的 Q8 节点表，
+ *       故必须在 init_problem() **之前** 调用 problem.set_mesh(reader)。
+ *       漏调会在 init_problem() 里抛异常（requires_mesh() 校验），不会静默算错。
+ *
+ * 配置：k=1, T=1e-1, 网格 4x4~64x64（meshes = {2,4,8,16,32}，square_nxn 给 2n×2n 单元）
  *       GPU 求解，不保存任何数据文件，仅输出误差表与收敛阶
  *       每套网格算完即打印一次累计误差表，避免后续网格失败时丢掉已有结果
  */
@@ -122,7 +130,9 @@ Result runCase(int nx, double final_time, int k,
         throw std::runtime_error("无法读取网格: " + mesh_file);
 
     MaxwellStefan::MSProblem problem;
-    problem.set_problem_index(2);
+    problem.set_problem_index(4);
+    // set_mesh 必须先于 init_problem：映射在 init_problem 末尾拿到网格才能建 Q8 表
+    problem.set_mesh(reader);
     if (!problem.init_problem())
         throw std::runtime_error("无法初始化 MS 算例");
 
@@ -271,13 +281,14 @@ int main(int argc, char** argv) {
         const double final_time = 1e-1;
 
         // 测试网格序列
-        // 与算例 4（main/MS_triblock_bdf2_main.cpp）对齐到同样四层，
-        // 使两张误差表可以逐行并排对比映射扭曲程度的代价。
-        std::vector<int> meshes = {2, 4, 8, 16};
+
+        // 从 2 起：square_1x1 的「0.5 线」有 1.3e-12 级的微折，
+        // 不适合作为逐单元 Q8 建表的输入（设计文档 §1.1）
+        std::vector<int> meshes = {32};
 
         std::cout << "\n";
         std::cout << "============================================================\n";
-        std::cout << "  MS BDF2 空间收敛阶测试（制造解，曲边 H(div) 混合虚元）\n";
+        std::cout << "  MS BDF2 空间收敛阶测试（算例 4：TriBlockSwirl 逐单元 Q8 映射）\n";
         std::cout << "  时间格式：BDF2（第 1 步 BDF1 启动）\n";
         std::cout << "  k = " << k
                   << "   T = " << std::scientific << std::setprecision(1)

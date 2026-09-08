@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     std::vector<double> u_ploy_coeff(n_comp * dof_conc, 0.0);
     for (int c = 0; c < n_comp; ++c) {
         double c0 = pde.initial_concentration_comp(
-            c, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
+            c, elem, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
         u_ploy_coeff[c * dof_conc + 0] = c0;
     }
     std::cout << "\n浓度初值（质心处）: ";
@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
         for (int j = 0; j < n_comp; ++j) {
             double alpha = solver.getStabilizationCoeffInit(elem, i, j);
             double Aij = pde.evaluate_A_comp_initial(
-                i, j, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
+                i, j, elem, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
             std::cout << "  alpha[" << i << "," << j << "] = "
                       << std::setw(12) << alpha
                       << "  (A_ij ≈ " << std::setw(8) << Aij << ")\n";
@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
         for (int j = 0; j < n_comp; ++j) {
             double alpha = solver.getStabilizationCoeffInit(elem, i, j);
             double Aij = pde.evaluate_A_comp_initial(
-                i, j, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
+                i, j, elem, md.cell_centroid_x[elem], md.cell_centroid_y[elem]);
             double ratio_alpha = alpha / alpha_cmin;
             double ratio_A = Aij / pde.c_star;
             std::cout << "  [" << i << "," << j << "]: "

@@ -85,6 +85,17 @@ public:
     // 读取Gmsh格式网格文件
     bool read_mesh(const std::string& filename);
 
+    // 读取legacy VTK格式网格文件（core/mesh_refiner 生成的悬点网格）
+    //
+    // 与 read_mesh 的区别只在解析层：VTK 的 CELLS 段每行自带顶点数，
+    // 天然支持变边数多边形，所以悬点网格（四边形 + 五边形混合）能直接读进来。
+    // 解析完之后走的是与 read_mesh 完全相同的后处理链：
+    //   compute_cell_properties -> generate_element_edges -> compute_boundary_info
+    // 因此 get_mesh_data() 拿到的 StraightMeshData 语义与 msh 路径一致。
+    //
+    // 支持的 CELL_TYPES：5(三角形) / 7(多边形) / 9(四边形)，三者顶点表语义相同。
+    bool read_mesh_vtk(const std::string& filename);
+
     // 获取网格数据
     const StraightMeshData& get_mesh_data() const { return mesh_data_; }
 
@@ -107,6 +118,9 @@ private:
 
     // 读取单元信息
     bool read_elements(const std::string& filename);
+
+    // 解析 legacy VTK 的 POINTS / CELLS / CELL_TYPES 三段
+    bool read_vtk_nodes_and_cells(const std::string& filename);
 
     // 计算单元属性（质心、面积、直径）
     bool compute_cell_properties();

@@ -100,9 +100,20 @@ PetscErrorCode solve_linear_system_schur(const AutoPetscMat& A, const AutoPetscV
 
 // GPU GMRES 迭代求解 (带 BJACOBI 预条件)
 // 无 CUDA 支持时自动回退到 CPU 版本
+//
+// 注意：GPU 矩阵、GPU 向量和 KSP 会跨调用缓存复用，只在矩阵结构
+// （阶数 / 非零元个数 / 行指针）变化时重建。皮卡迭代反复求解同一结构的
+// 系统时，这样能避免每次都 MatDuplicate + 类型转换 + 重建 KSP + 完整 ILU
+// 分解，既省时间又避免大块内存反复申请释放导致堆持续膨胀。
+// 缓存会在 PetscFinalize 时自动释放，也可用 clear_cuda_solver_cache() 提前释放。
 PetscErrorCode solve_linear_system_cuda(Mat A, Vec b, Vec x, PetscBool* converged, bool verbose = false);
 PetscErrorCode solve_linear_system_cuda(const AutoPetscMat& A, const AutoPetscVec& b, const AutoPetscVec& x,
                                           PetscBool* converged, bool verbose = false);
+
+// 立即释放 solve_linear_system_cuda 的缓存（GPU 矩阵/向量 + KSP）。
+// 一般不必手动调用：缓存在矩阵结构变化时自动重建，并在 PetscFinalize 时自动释放。
+// 需要在两个算例之间尽早把显存和内存还回去时可以显式调用。
+void clear_cuda_solver_cache();
 
 // GPU Schur 补分块求解 (用于鞍点矩阵)
 // 外层 FGMRES + FieldSplit/Schur + GAMG 子块预条件

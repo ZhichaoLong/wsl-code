@@ -98,6 +98,23 @@ void writeCurvedEdges(std::ofstream& output,
                       int samples_per_edge) {
     output << "edge,point,x,y\n";
     output << std::setprecision(17);
+
+    // 映射现在按单元区分，而这里是按边遍历，需要先建一张
+    // 边 -> 所属单元 的表（内部边取第一个出现它的单元）
+    std::vector<int> edge_owner_cell(mesh.num_edges, -1);
+    for (int cell = 0; cell < mesh.num_cells; ++cell) {
+        const int start = mesh.cell_edge_indices[cell];
+        const int count = mesh.nodes_per_cell[cell];
+        for (int le = 0; le < count; ++le) {
+            const int ge = mesh.global_edges[start + le];
+            if (edge_owner_cell[ge] < 0) edge_owner_cell[ge] = cell;
+        }
+    }
+    // 理论上每条边至少属于一个单元；万一有孤立边，退回 0 号单元
+    for (int e = 0; e < mesh.num_edges; ++e) {
+        if (edge_owner_cell[e] < 0) edge_owner_cell[e] = 0;
+    }
+
     for (int edge = 0; edge < mesh.num_edges; ++edge) {
         const int node0 = mesh.edge_endpoints[2 * edge];
         const int node1 = mesh.edge_endpoints[2 * edge + 1];
@@ -110,7 +127,7 @@ void writeCurvedEdges(std::ofstream& output,
             const double xi = (1.0 - t) * xi0 + t * xi1;
             const double eta = (1.0 - t) * eta0 + t * eta1;
             const MaxwellStefan::Point2D physical =
-                mapping.physical_coords(xi, eta);
+                mapping.physical_coords(edge_owner_cell[edge], xi, eta);
             output << edge << ',' << point << ','
                    << physical.x << ',' << physical.y << '\n';
         }
@@ -136,14 +153,25 @@ int main(int argc, char** argv) {
             ? argv[3] : "data/ms_concentration_plot";
         const int problem_index = argc >= 5
             ? std::stoi(argv[4]) : 1;
-        const int subdivisions = 24;
+        // 每个三角形的细分密度。点数按 (s+1)(s+2)/2 增长，CSV 体积也一样，
+        // 所以单元多的时候要往下调：256 个单元下 s=24 每帧约 17MB（500 帧 8.6G），
+        // s=12 每帧约 4.4MB，每单元仍有 ~300 个采样点，云图看不出差别。
+        // 默认保持 24，算例 1/2/3 已有的产物和跑法不受影响。
+        const int subdivisions = argc >= 6
+            ? std::stoi(argv[5]) : 24;
         const int k = 1;
         const int gauss_point_num = 9;
         const int gauss_point_num_1d = 9;
 
-        // 读取网格
+        // 读取网格：按扩展名自动选 reader
+        // .vtk 是 core/mesh_refiner 生成的悬点网格（四边形 + 五边形混合），
+        // 走 read_mesh_vtk；其余仍按 Gmsh .msh 处理，原有跑法不受影响。
         vem::StraightMeshReader reader;
-        if (!reader.read_mesh(mesh_file)) {
+        const bool is_vtk = (mesh_file.size() > 4 &&
+                             mesh_file.compare(mesh_file.size() - 4, 4, ".vtk") == 0);
+        const bool read_ok = is_vtk ? reader.read_mesh_vtk(mesh_file)
+                                    : reader.read_mesh(mesh_file);
+        if (!read_ok) {
             throw std::runtime_error("无法读取网格: " + mesh_file);
         }
         const auto& mesh = reader.get_mesh_data();
@@ -151,6 +179,10 @@ int main(int argc, char** argv) {
         // 初始化算例
         MaxwellStefan::MSProblem problem;
         problem.set_problem_index(problem_index);
+        // 分单元映射（算例 4 的 TriBlockSwirlMapping）要靠直边网格建 Q8 节点表，
+        // 必须先于 init_problem 注入，否则 requires_mesh() 校验会抛异常。
+        // 对算例 1/2/3 这一句是空操作：那三个映射与单元无关，不读网格。
+        problem.set_mesh(reader);
         if (!problem.init_problem()) {
             throw std::runtime_error("无法初始化 MS 算例");
         }
@@ -236,7 +268,7 @@ int main(int argc, char** argv) {
                         const vem::basis::Point2D comp_point(xi, eta);
 
                         const MaxwellStefan::Point2D physical =
-                            mapping.physical_coords(xi, eta);
+                            mapping.physical_coords(elem, xi, eta);
 
                         SamplePoint sp;
                         sp.cell = elem;
@@ -319,7 +351,7 @@ int main(int argc, char** argv) {
                      << sp.x << ',' << sp.y;
                 for (int c = 0; c < n_comp; ++c) {
                     double val = pde.initial_concentration_comp(
-                        c, sp.xi, sp.eta);
+                        c, sp.cell, sp.xi, sp.eta);
                     file << ',' << val;
                 }
                 file << '\n';

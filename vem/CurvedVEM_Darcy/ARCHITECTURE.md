@@ -27,7 +27,9 @@ CurvedVEM_Darcy/
 │   ├── gauss_quadrature.h       # 高斯积分头文件
 │   ├── gauss_quadrature.cpp     # 高斯积分实现
 │   ├── petsc_utils.h            # PETSc 工具头文件
-│   └── petsc_utils.cpp          # PETSc 工具实现
+│   ├── petsc_utils.cpp          # PETSc 工具实现
+│   ├── mesh_refiner.h           # 悬点网格生成头文件（服务算例 5）
+│   └── mesh_refiner.cpp         # 悬点网格生成实现
 ├── lib/                         # 底层数学库（共享）
 │   ├── polynomial_basis.h       # 显式多项式基函数头文件
 │   └── polynomial_basis.cpp     # 显式多项式基函数实现
@@ -40,28 +42,55 @@ CurvedVEM_Darcy/
 │   ├── data/                    # 网格数据文件
 │   │   ├── square_*.msh         # 正方形网格系列（1x1~128x128）
 │   │   └── orthogonal_*.msh     # 正交网格系列（1x1~128x128）
+│   ├── data_refined/            # 悬点网格（core/mesh_refiner 生成，服务算例 5）
+│   │   ├── square_*_refined.vtk # legacy VTK，全部单元用 VTK_POLYGON(7)
+│   │   ├── square_*_refined.poly# 极简文本格式（NODES/CELLS）
+│   │   └── fig/                 # 黑白网格图
 │   ├── straight_mesh.h          # 直边网格头文件
 │   ├── straight_mesh.cpp        # 直边网格实现
 │   ├── curved_mesh.h            # 曲边网格头文件
 │   ├── curved_mesh.cpp          # 曲边网格实现
 │   ├── polygon_triangulator.h   # 多边形三角剖分头文件
 │   └── polygon_triangulator.cpp # 多边形三角剖分实现
-├── tests/                       # 测试程序
+├── tests/                       # 测试程序（*_main.cpp 自动发现）
 │   ├── test_quadrature_main.cpp      # 积分模块测试
 │   ├── test_petsc_utils_main.cpp     # PETSc 工具测试
 │   ├── test_polynomial_basis_main.cpp # 多项式基函数测试
 │   ├── test_darcy_problem_main.cpp   # Darcy 算例测试
-│   └── test_ms_problem_main.cpp      # Maxwell-Stefan 算例测试
 │   ├── test_straight_mesh_main.cpp   # 直边网格测试
 │   ├── test_curved_mesh_main.cpp     # 曲边网格测试
-│   └── test_polygon_triangulator_main.cpp # 多边形三角剖分测试
+│   ├── test_polygon_triangulator_main.cpp # 多边形三角剖分测试
+│   ├── test_ms_triblock_q8_main.cpp  # 算例 4 几何准入（detJ>0 / 共享边）
+│   └── test_ms_*.cpp                 # MS 各组装环节测试
+├── main/                        # 生产算例入口（*_main.cpp 自动发现）
+│   ├── Darcy_curved_main.cpp
+│   ├── MS_curved_main.cpp            # 算例 1/2
+│   ├── MS_curved_bdf2_main.cpp       # 算例 2 BDF2 收敛
+│   ├── MS_curved_convergence_main.cpp
+│   ├── MS_curved_exact_main.cpp
+│   ├── MS_curved_timing_main.cpp
+│   ├── MS_half_annulus_main.cpp      # 算例 3
+│   ├── MS_triblock_bdf2_main.cpp     # 算例 4 BDF2 收敛
+│   └── MS_triblock_frames_main.cpp   # 算例 4 逐时间步出图数据
+├── tools/                       # 离线工具（*.cpp 自动发现）
+│   ├── export_ms_concentration.cpp   # 解 → 三角剖分 CSV（供 Python 画图）
+│   ├── export_triblock_mesh.cpp      # 导出算例 4 网格几何
+│   ├── triblock_sweep.cpp            # TriBlockSwirl 参数扫描（detJ 约束）
+│   ├── plot_triblock_bw.py           # 黑白网格图，一网格一图
+│   ├── plot_triblock_check.py        # 网格自检可视化
+│   └── plot_triblock_sweep.py        # 扫参结果可视化
+├── scripts/                     # 后处理 Python
+│   ├── plot_ms_concentration.py      # 三组分云图 + 曲边网格叠加
+│   ├── make_gif.py                   # 帧序列 → GIF
+│   └── plot_*.py                     # 其他对比/收敛作图
+├── data/                        # 计算与作图产物（.gitignore，不入库）
 ├── solver/                      # 求解器模块
 │   ├── HdivMatrix.h             # H(div) 通用投影矩阵头文件（共享）
 │   ├── HdivMatrix.cpp           # H(div) 通用投影矩阵实现（共享）
 │   ├── DarcySolver.h            # Darcy 专用组装与求解器
 │   ├── DarcySolver.cpp          # Darcy 求解器实现
-│   ├── MsSolver.h               # Maxwell-Stefan 专用组装与求解器（待实现）
-│   └── MsSolver.cpp             # MS 求解器实现（待实现）
+│   ├── MSSolver.h               # Maxwell-Stefan 专用组装与求解器
+│   └── MSSolver.cpp             # MS 求解器实现
 ├── 混合虚拟元_darcy.md           # Darcy 原始数学文档
 └── 混合虚拟元_MaxwellStefan.md   # Maxwell-Stefan 数学文档
 ```
@@ -198,6 +227,181 @@ void print_vector(const AutoPetscVec& v, const char* name = "Vector");
 
 ---
 
+### 2.5 core/mesh_refiner - 悬点网格生成模块
+
+**文件**: `core/mesh_refiner.h` / `core/mesh_refiner.cpp`
+**驱动**: `tools/refine_mesh.cpp`（可执行 `build/tools/refine_mesh`）
+**绘图**: `tools/plot_refined_mesh.py`
+**服务对象**: 算例 5（全新算例，与算例 4 无关）
+
+#### 2.5.1 动机
+
+虚拟元法适配任意多边形单元，因此**悬点不需要约束方程**：一个四边形若某条边上多出一个悬点，
+直接把它当五边形单元求解即可，悬点自动升格为该单元的一个顶点。本模块把这个想法落成网格文件，
+用来展示 VEM 相对于 FEM 的网格灵活性。
+
+#### 2.5.2 为什么输出不是 .msh
+
+> **勘误（2026-09-03）**：本节初稿断言「`get_nodes_count_by_element_type()` 的 switch 只有
+> `case 2` 和 `case 3`，五边形无法写进 .msh」，这是**错的**。该 switch 实际是
+> `case 2 → 3`、`case 3 → 4`、`case 11 → 5`、`case 12 → 6`，本项目的 reader 是支持五边形和
+> 六边形的。下面是订正后的理由。
+
+Gmsh MSH 4.1 标准里**没有通用多边形单元类型**：类型码 `2 = 三角形`、`3 = 四边形`，
+再往上是高阶单元（真实的 Gmsh `11` 是 10 节点四面体、`12` 是 27 节点六面体，都是三维单元）。
+本项目的 `get_nodes_count_by_element_type()` 把 `11 / 12` 私自复用成了五边形 / 六边形，
+这是**项目自定义约定**，Gmsh 本身永远不会输出这样的文件。
+
+所以理论上确实可以把五边形写成 `case 11` 的 .msh，但那样产出的文件只有本项目能读，
+在 Gmsh / ParaView 里打开会被当成三维单元误解。既然是给一个全新算例造网格，
+选通用格式更划算：
+
+| 格式 | 用途 |
+|------|------|
+| legacy VTK（ASCII，UNSTRUCTURED_GRID） | 全部单元写成 `VTK_POLYGON`(类型 7)，可直接在 ParaView 打开；附带 `num_vertices` cell data 方便定位五边形 |
+| `.poly` 极简文本 | `NODES n` / 坐标 / `CELLS m` / `顶点数 + 顶点编号`，供后续自己写 reader |
+
+读取见 [2.5.9](#259-读回-vtkstraightmeshreaderread_mesh_vtk)。
+
+#### 2.5.3 数据结构
+
+`PolyMeshData` 与 `StraightMeshData` 的本质区别是**单元节点数可变**：
+
+```cpp
+struct PolyMeshData {
+    std::vector<double> node_coords;   // [x0, y0, x1, y1, ...]
+    int num_nodes;
+    std::vector<int> cell_nodes;       // 逆时针，变长
+    std::vector<int> cell_offsets;     // 长度 num_cells + 1
+    int num_cells;
+    int nodes_of_cell(int e) const;    // cell_offsets[e+1] - cell_offsets[e]
+};
+```
+
+#### 2.5.4 算法
+
+`refine_x_strip(in, x_lo, x_hi, out, stats, tol)`，四步：
+
+1. **标记**：单元的**所有**节点 x 都落在 `[x_lo - tol, x_hi + tol]` 内才算「条带内」。
+   用全节点判据而非质心判据——条带边界落在格线上时两者等价，不落在格线上时全节点判据
+   不会切出半个单元。非四边形输入直接返回 `false`。
+2. **搬节点**：原始节点原样复制，编号不变。**必须先于新节点**，否则后面记下的中点编号会被整体顶掉。
+3. **建中点**：遍历所有加密单元的边，用边键 `(min(a,b), max(a,b))` 去重后创建中点。
+   一次性建完，第 4 步条带外单元才查得到自己边上有没有悬点。
+4. **建单元**：
+   - 条带内：4 个边中点 + 1 个形心 → 4 个子四边形（均保持逆时针）
+   - 条带外：逐边查 `midpoint`，查到就把悬点顺序插入顶点列表 → 四边形升格为五边形
+
+#### 2.5.5 两个必须注意的坑
+
+- **坐标浮点噪声**：`mesh/data/*.msh` 里 `0.25` 实际存的是 `0.2499999999993471`。
+  精确比较会把本该加密的一整列单元漏掉，所以 `tol` 是必需参数（默认 `1e-8`）。
+- **中点去重**：相邻两个加密单元看到同一条边时必须得到同一个节点编号。边键保证了这一点，
+  也保证了粗单元一侧插入的悬点与细单元一侧的顶点**严格是同一个节点**，而不是两个坐标相同的节点。
+
+#### 2.5.6 自检
+
+`validate_poly_mesh()` 有五组检查，其中**边的流形性**是判断悬点处理是否正确的关键一条：
+每条无向边只能出现 1 次（且整条落在区域外边界上）或 2 次。若某个悬点只被细单元一侧认领、
+粗单元没升格成多边形，半条边就会「只出现 1 次却又不在区域边界上」，这里立刻抓到。
+
+其余四组：结构自洽（offsets / cell_nodes 长度）、逐单元（索引越界、重复顶点、有向面积为正）、
+面积守恒（单元面积之和 == 外接矩形面积，覆盖漏单元与单元重叠）、孤立节点。
+
+#### 2.5.7 生成结果
+
+条带取 `x ∈ [0.25, 0.75]`。跳过 `square_1x1.msh`——它只有 2×2 个单元，格线是 0/0.5/1，
+第一个单元就横跨 [0, 0.5]，不可能整体落在中间条带内。
+
+注意 `square_nxn.msh` 实际含 **2n × 2n** 个单元，文件名里的 n 不是单元数。
+输出沿用源文件的 n 命名，便于追溯。
+
+| 源文件 | 输入单元 | 输出单元 | 加密单元 | 悬点 | 五边形 |
+|--------|---------|---------|---------|------|-------|
+| square_2x2 | 16 | 40 | 8 | 8 | 8 |
+| square_4x4 | 64 | 160 | 32 | 16 | 16 |
+| square_8x8 | 256 | 640 | 128 | 32 | 32 |
+| square_16x16 | 1024 | 2560 | 512 | 64 | 64 |
+| square_32x32 | 4096 | 10240 | 2048 | 128 | 128 |
+| square_64x64 | 16384 | 40960 | 8192 | 256 | 256 |
+| square_128x128 | 65536 | 163840 | 32768 | 512 | 512 |
+
+7 张网格自检全部通过，最大单元边数均为 5（无意外的六边形）。
+另经独立的 Python 复核：所有五边形的第 5 个顶点恰是所在边的中点；悬点 x 坐标只取 0.25 / 0.75；
+**重复坐标的节点组数为 0**（证明悬点是单个共享节点，去重键生效）。
+
+#### 2.5.8 边界
+
+本模块**只生成网格文件**，不参与任何求解流程，不依赖 PETSc，不修改任何既有功能文件。
+特别地，算例 4（`TriBlockSwirlMapping`）是**扭曲四边形算例**，其 Q8 映射按每单元 4 个角点建表
+（`ms_problem.cpp` 中 `nv != 4` 直接抛异常），**按设计如此**，不在本模块的服务范围内。
+
+#### 2.5.9 读回 VTK：`StraightMeshReader::read_mesh_vtk`
+
+**文件**: `mesh/straight_mesh.h` / `mesh/straight_mesh.cpp`（**纯新增**，原有 `read_mesh` 及其余函数一行未动）
+
+```
+read_mesh(.msh)  ──┐
+                   ├──► compute_cell_properties ──► generate_element_edges ──► compute_boundary_info
+read_mesh_vtk(.vtk)┘         （三个后处理函数两条路径完全复用）
+```
+
+只有解析层不同。VTK 的 `CELLS` 段每行自带顶点数，天然支持变边数多边形；
+后处理链原样复用，这是"`get_mesh_data()` 两条路径语义一致"最强的保证。
+新增私有函数 `read_vtk_nodes_and_cells()` 解析 `POINTS` / `CELLS` / `CELL_TYPES` 三段：
+
+- 用 **token 扫描**（`istream >>` 找关键字）而非逐行匹配，VTK 头部是自由格式
+- `POINTS` 强制三分量，z 读出即丢弃
+- 顶点顺序统一过一遍 `reorder_polygon_to_ccw()`——VTK 不保证方向
+- `CELL_TYPES` **必须校验**且只接受 `5`/`7`/`9`（三角形/多边形/四边形）。
+  这不是形式检查：若混进三维或高阶单元，顶点表就不再是"逆时针多边形环"，
+  `generate_element_edges()` 会算出错误的边**而不报错**
+
+#### 2.5.10 兼容性验证：`tests/test_vtk_mesh_main.cpp`
+
+```bash
+make test_vtk_mesh                                   # 默认 square_2x2_refined.vtk
+./build/test_vtk_mesh mesh/data_refined/square_64x64_refined.vtk
+```
+
+7 张网格全部 **25 项通过 / 1 项失败**。分七节检查，其中三条是悬点网格独有的判据：
+
+| 节 | 关键判据 |
+|----|---------|
+| [3] | 面积之和 == 1.0；顶点全部逆时针；**存储质心 vs 真实质心** |
+| [4] | 欧拉公式 `V - E + F == 2`；**只出现 1 次的边必须整条躺在区域边界上**——若某悬点只被细单元一侧认领、粗单元没升格，就会出现"用了 1 次却在内部"的半条边 |
+| [5] | `boundary_edges` 无 `-1`（相邻边界节点间确实存在真实的边）；下/上边界节点数多于左/右（加密条带竖直穿过） |
+| [7] | 耳切法能处理**含三个共线顶点**的五边形 |
+
+**唯一失败项 —— 五边形质心不是真实质心（`compute_cell_properties` 的既有行为，非本次改动引入）**
+
+`compute_cell_properties()` 对 `node_count == 4` 用包围盒中心，对其他边数用**顶点平均**。
+顶点平均不是多边形质心。以 `square_2x2_refined` 的单元 21 为例：
+存储 `(0.85, 0.375)`，真实 `(0.875, 0.375)`。偏差在 7 张网格上精确等于 **0.1h**
+（h=0.5→0.025，h=1/128→0.00078125），即随加密按 O(h) 缩小，但**相对单元直径恒为 10%，不消失**。
+
+影响评估：全项目 `cell_centroid_*` 的使用**只有一种**——`solver/HdivMatrix.cpp`、
+`solver/DarcySolver.cpp` 里作为缩放单项式基的中心 `xD`。基 `{1, (x-xD)/hD, ...}`
+张成的多项式空间与 `xD` 取在单元内哪一点无关，且所有单元积分都走三角剖分 + 高斯求积、
+不假设一阶矩为零。**所以这不影响离散解，只轻微影响条件数。**
+面积（鞋带公式）与直径（顶点最大间距）都是正确的。
+
+#### 2.5.11 三角剖分：沿用耳切法
+
+**结论：不改 `PolygonTriangulator`,悬点网格继续走既有的 `earClipping`。**
+
+曾评估过换成"质心扇形"剖分,实测后放弃。原因是耳切法在悬点网格上**本来就是通过的**:
+五边形那三个共线顶点(悬点及其两侧端点),`isEar()` 用 `cross <= 1e-8` 直接判为非耳自动跳过,
+剩下的凸角照样能切出 `n-2` 个三角形,面积吻合到 3e-14。既然没有故障,
+就不动这个被算例 1–4 全部依赖的共享模块——它是所有单元积分的唯一入口,
+而源项含 sin/cos 非多项式,换剖分会改动已验证的收敛表末位数字。
+
+留一条备忘:`isPointInsideTriangle()` 用的是**绝对**容差 `1e-6` 比较面积,
+而 128×128 加密后小单元面积才 1.5e-5。目前 7 张网格都没出问题,
+但若将来把网格加密到更细,这个容差需要复查。
+
+---
+
 ### 3. examples/darcy_problem - Darcy 算例模块
 
 **文件**: `examples/darcy_problem.h` / `examples/darcy_problem.cpp`
@@ -299,112 +503,247 @@ public:
 **文件**: `examples/ms_problem.h` / `examples/ms_problem.cpp`
 
 **功能**:
-- MS 专用曲边映射（`x = ξ + 0.1 sin(2πη + π/3)`, `y = η + 0.2 sin(2πξ + π/4)`）
+- 曲边映射基类 + 四个派生映射（恒等 / 正弦扰动 / 半圆环 / 三块 swirl）
 - 二元扩散系数与矩阵分解：`c_ij`, `c* = min(c_ij)`, `bar_c_ij = c_ij - c*`
-- 三组分精确解（正弦脉动时间依赖）
+- 三组分制造解（正弦脉动时间依赖）+ 通量 + 源项 + 边界条件
 - 本构关系通量 `J = -bar_A(c)^{-1} ∇c`
-- 非线性扩散矩阵评估（3 种接口，与 MS_FVM 完全兼容）
-- 计算域拉回函数（Piola 变换、detJ 加权、链式法则）
+- 非线性扩散矩阵评估（初值模式 / 多项式系数模式）
+- 计算域拉回（Piola 变换、detJ 加权、链式法则）
 
-**主要接口**:
+#### 3.5.1 核心设计：逐单元映射
+
+映射接口的六个雅可比方法**第一个参数一律是 `cell_idx`**。这不是可选的装饰，是整个曲边模块的承重结构：
+
+- **`cell_idx` 不给默认值。** 分单元映射下「静默取到错误单元的雅可比」会让误差表看起来完全正常却是错的——`MSSolver.cpp` 有 14 处直接调用 `jacobian()` / `jacobian_det()`（Piola 变换与面积元），任何一处传错单元都不会报错，只会污染结果。不给默认值，漏传的调用点在编译期就断掉。
+- **`(xi, eta)` 始终是全局计算域坐标**，即直边参考网格上的物理坐标。积分点由 `triangulateElement(mesh_data, cell_idx)` 生成，本来就落在 `cell_idx` 号单元内。所以 `cell_idx` 是**纯增量信息，不引入任何坐标变换**：它只回答「这个点属于哪个单元」，从而让映射可以逐单元取不同公式。
+- **全局连续映射收下 `cell_idx` 后直接丢弃**，数值行为与加参数前逐位相同。算例 1/2/3 不受影响。
+
 ```cpp
-namespace MaxwellStefan {
-
-// 曲边映射基类（与 Darcy 共用接口设计）
 class IsoparametricMapping {
-    virtual Point2D physical_coords(double xi, double eta) const = 0;
-    virtual Tensor2D jacobian(double xi, double eta) const = 0;
-    virtual double jacobian_det(double xi, double eta) const = 0;
-    virtual Tensor2D jacobian_inv(double xi, double eta) const = 0;
-    virtual Tensor2D jacobian_transpose(double xi, double eta) const = 0;
-    virtual Tensor2D jacobian_transpose_inv(double xi, double eta) const = 0;
+public:
+    virtual Point2D physical_coords(int cell_idx, double xi, double eta) const = 0;
+    virtual Tensor2D jacobian(int cell_idx, double xi, double eta) const = 0;
+    virtual double   jacobian_det(int cell_idx, double xi, double eta) const = 0;
+    virtual Tensor2D jacobian_inv(int cell_idx, double xi, double eta) const = 0;
+    virtual Tensor2D jacobian_transpose(int cell_idx, double xi, double eta) const = 0;
+    virtual Tensor2D jacobian_transpose_inv(int cell_idx, double xi, double eta) const = 0;
+
+    // 网格注入通道：分单元映射要靠 cell_idx 去网格里取该单元节点坐标。
+    // 持有方式仿 HdivMatrix：只存指针，不拥有所有权。
+    void set_mesh(const vem::StraightMeshReader& reader);  // 非虚，内部调 on_mesh_set()
+    bool has_mesh() const;
+
+    // 本映射是否**必须**有网格。分单元映射返回 true，
+    // init_problem() 据此强制校验，漏调 set_mesh 立刻抛异常。
+    virtual bool requires_mesh() const { return false; }
+
+protected:
+    virtual void on_mesh_set() {}   // 网格到手的钩子，需要建表的派生类在这里做
+    const vem::StraightMeshReader* mesh_reader_ = nullptr;
+    const vem::StraightMeshData*   mesh_data_   = nullptr;
 };
+```
 
-// MS 专用曲边映射
-class MS_Mapping : public IsoparametricMapping { /* ... */ };
+`set_mesh` 保持非虚——指针记账不必在每个派生类里重复一遍，只把「网格到手了」这个时机通过 `on_mesh_set()` 钩子交出去。
 
-// MS PDE 数据结构
+#### 3.5.2 四个映射
+
+| 类 | 算例 | 形式 | 与单元相关 |
+|---|---|---|---|
+| `IdentityMapping` | — | 恒等，直边 | 否 |
+| `SinPerturbationMapping` | 1, 2 | `x = ξ + ε sin(2πη)`, `y = η + ε sin(2πξ)`，`ε=0.05` | 否 |
+| `HalfAnnulusMapping` | 3 | 半圆环 | 否 |
+| `TriBlockSwirlMapping` | 4 | 真三块分区 + 全局 swirl，逐单元 Q8 | **是** |
+
+前三个是全局连续的单一解析映射，`requires_mesh()` 返回 false。
+
+#### 3.5.3 TriBlockSwirlMapping — 两层架构
+
+这是唯一的分单元映射，也是 `cell_idx` 接口存在的理由。它分两层：
+
+**第 1 层：解析生成器 G。** 一个纯 `(X,Y) → (x,y)` 的映射，只由 `Params` 定义，**完全不知道网格存在**。参考域 `[0,1]²` 被切成真三块：竖直分界曲线 D 贯穿全高，水平界面 H 只存在于 D 右侧并终止在 D 上（T 型节点）；再叠加一个在整条外边界上消失的全局 swirl。因为 swirl 在边界消失，物理域严格等于 `[0,1]²`，**外边界保持直**，所以精确解 / 源项 / 边界条件 / 边界节点语义全部原样沿用算例 2，一个字都不用改。
+
+**第 2 层：逐单元 Q8 采样。** 读直边网格，取每个单元的 4 个角点（`cell_nodes`）+ 4 个中边点（相邻角点算术平均），对这 8 个参考点各求一次 G，把结果存成该单元的 Q8 节点表。雅可比就是 Q8 serendipity 形函数导数。
+
+**换网格只改变 G 的采样密度，从不改变 G 的形状**——这是任意网格都能用的原因。`square_8x8.msh` 和 `square_128x128.msh` 扭曲成的是同一个几何，只是离散得更细。
+
+```cpp
+class TriBlockSwirlMapping : public IsoparametricMapping {
+public:
+    struct Params { /* a, c, s_b, s_t, bv, b1, bb3, bt2, br3, br2,
+                       bh, y_r, A_H, alpha0, m, cx, cy */ };
+    TriBlockSwirlMapping();                        // 用默认 Params
+    explicit TriBlockSwirlMapping(const Params& p);
+    // 两个构造函数而不是一个带默认实参的：C++11 下 `= Params()` 作为类内
+    // 默认实参时，编译器还没处理完 Params 的成员初始值，会直接报错。
+
+    bool requires_mesh() const override { return true; }
+
+    Point2D generator(double xi, double eta) const;   // G 本身，供自检直接调用
+
+    struct CellQ8 {                 // 单元的 Q8 节点数据，供自检检查 (R2)
+        double nx[8], ny[8];        // 8 个节点物理坐标，规范序
+        double xi_c, eta_c, hx, hy; // 参考单元中心与边长
+    };
+    const CellQ8& cell(int cell_idx) const;
+
+protected:
+    void on_mesh_set() override;    // 建表
+};
+```
+
+**相邻单元共享边重合 (R2) 按构造成立**：相邻单元看到同一对全局节点，`(x0+x1)/2` 与 `(x1+x0)/2` 在 IEEE 下逐位相同，故共享边的 3 个 Q8 节点数值同一。实测 Q8 节点表差异为 `0.000e+00`。
+
+**一个坑：** `cell_nodes` 保证逆时针，但**起始角点在单元间循环变化**（实测 square_2x2 是 右下→右上→左上→左下）。所以局部坐标不能按「节点 0 就是 (-1,-1)」硬编码，建表时必须按每个角点相对单元中心的实际位置重排成规范 Q8 序。
+
+**参数标定的硬约束是 `detJ > 0`**（`detJ ≤ 0` 意味着单元翻面自交，不是合法网格）。参数由 `tools/triblock_sweep` 扫参选出，约束是 **N=2,4,8,16 四层全部 detJ > 0**。
+
+**N=2 是绑定约束，不是 N=4**——它是收敛研究的最粗一层，也是最容易翻面的一层：G 层生成器 detJ 全正**不代表** Q8 插值不自交，单元太少时 8 节点二次单元跟不上大角度旋转。早期只扫 `{4,8,16}` 会漏掉这个失效。
+
+三个旋钮在 N=2 上的代价极不对称：
+- `beta` 统一放大 1.2 倍反而**改善** N=2 条件数（31.2→14.2，分级重分布了单元）；放大到 1.32 倍就翻面
+- `A_H` 很贵：0.10→0.14 就把 N=2 cond 推到 87.2
+- `s_t - s_b` 倾斜最贵：0.35/0.60 → 0.32/0.63 就让 N=2 cond 爆到 8716
+- `m=2` 严格优于 `m=3`：同 `alpha0` 下更扭而 N=2 cond 更低（13.0 vs 36.5）
+- `alpha0` 在 `m=2` 下可到 -85°；-90° 时 N=2 cond 163.6 已边缘，-95° 翻面
+
+`detJ_min` 随细化单调收敛到 **0.20，即 G 自身的下界**，每加密一次差距减半（Q8 插值误差 ~h² 消失）：
+
+| N | 2 | 4 | 8 | 16 | 32 | 64 | 128 |
+|---|---|---|---|---|---|---|---|
+| detJ_min | 0.2225 | 0.2190 | 0.2101 | 0.2050 | 0.2024 | 0.2011 | 0.2004 |
+
+（以上为 `kG4` 四点 Gauss 采样。`tools/triblock_sweep` 用 9×9 均匀点含边界，更苛刻，数值不同属正常。）
+
+**已知未决**：Q8 逐单元映射只在单元交界处 C⁰，`detJ` 跨界面跳变。混合 H(div) VEM 所需的映射光滑度在设计文档里只是**估计**，未经证明。
+
+#### 3.5.4 PDE 数据签名约定
+
+```cpp
 struct MSPdeData {
-    int n_components;
-    std::vector<std::vector<double>> c_ij;     // 二元扩散系数倒数
-    double c_star;                              // 最小值 c* = min(c_ij)
-    std::vector<std::vector<double>> bar_c_ij;  // bar_c_ij = c_ij - c*
+    int n_components = 3;
+    std::vector<std::vector<double>> c_ij, bar_c_ij;
+    double c_star;
 
-    // 物理域函数
-    std::function<double(int i, double x, double y)> initial_concentration;
-    std::function<double(int i, double x, double y, double t)> solution_c;
-    std::function<Vector2D(int i, double x, double y, double t)> solution_J;
-    std::function<Vector2D(int i, double x, double y, double t)> grad_c;
-    std::function<double(int i, double x, double y, double t)> source_f;
-    std::function<double(int i, double x, double y, double nx, double ny, double t)> boundary_flux;
+    // 计算域回调（*_comp）凡内部要用映射的，都带 cell_idx，
+    // 参数顺序统一为「组分号 → 单元号 → 坐标 → 时间」。
+    std::function<double(int i, int cell, double xi, double eta)> initial_concentration_comp;
+    std::function<double(int i, int cell, double xi, double eta, double t)> source_f_comp;
+    std::function<double(int i, int cell, double xi, double eta, double t)> exact_concentration_comp;
+    std::function<Vector2D(int i, int cell, double xi, double eta, double t)> exact_flux_comp;
+    std::function<double(int i, int cell, double xi, double eta,
+                         double nx, double ny, double t)> boundary_flux_comp;
 
-    // 非线性扩散矩阵评估（用于 Picard 迭代）
-    // 1. 完整矩阵 bar_A(u) = c*I + A(u)
-    std::function<void(const std::vector<double>& u,
-                       std::vector<std::vector<double>>& bar_A)>
-        evaluate_diffusion_matrix;
-    // 2. 纯非线性部分 A(u)（退化，列和=0）
-    std::function<void(const std::vector<double>& u,
-                       std::vector<std::vector<double>>& A)>
-        evaluate_nonlinear_part;
-    // 3. 单元均值输入（对应 MS_FVM mid_A_coeff）
-    //    返回纯非线性部分 A(u)，不含 c*（稳定项单独加）
-    std::function<double(int i, int j, const std::vector<double>& u_avg)>
-        element_diffusion_coeff;
-    // 4. 单项式系数输入（对应 MS_FVM poly_A_coeff）
-    //    u_ploy_coeff 布局：[comp0_monom0, ..., comp1_monom0, ...]
-    //    返回纯非线性部分 A(u)，不含 c*
+    // 物理域回调取 (x, y)，与单元无关，不带 cell_idx。
+    std::function<double(int i, double x, double y, double t)> exact_concentration, source_f;
+    std::function<Vector2D(int i, double x, double y, double t)> exact_flux;
+    std::function<double(int i, double x, double y,
+                         double nx, double ny, double t)> boundary_flux;
+    // 例外：initial_concentration 虽是物理域，但内部要逆映射，故带 cell_idx。
+    std::function<double(int i, int cell, double x, double y)> initial_concentration;
+
+    // 非线性扩散矩阵 A_ij（纯非线性部分，**不含 c*I**）
+    //   A_ii(u) = Σ_{k≠i} bar_c_ik u_k ,  A_ij(u) = -bar_c_ji u_i  (i≠j)
+    std::function<double(int i, int j, int cell, double x, double y)>   evaluate_A_initial;
+    std::function<double(int i, int j, int cell, double xi, double eta)> evaluate_A_comp_initial;
+    // 数值解模式：输入单项式系数，全程不碰映射，故不需要 cell_idx
     std::function<double(int i, int j, const std::vector<double>& u_ploy_coeff,
-                         double xD_x, double xD_y, double hD, double x, double y)>
-        polynomial_diffusion_coeff;
+                         double xD_x, double xD_y, double hD,
+                         double xi, double eta)> evaluate_A_comp_poly;
 };
+```
 
-// 算例管理类
+`evaluate_A_comp_poly` 不带 `cell_idx` 是有意的：它只用多项式系数与 `xD/hD`，全程不碰映射。
+
+#### 3.5.5 MSProblem
+
+```cpp
 class MSProblem {
 public:
     void set_problem_index(int index);
-    void set_time(double t);
+
+    // 注入网格。可选调用，但若调用**必须在 init_problem() 之前**——
+    // init_problem() 会把网格转交给它构造出来的映射对象。
+    void set_mesh(const vem::StraightMeshReader& reader);
+
     bool init_problem();
     const MSPdeData& get_pde_data() const;
     const IsoparametricMapping& get_mapping() const;
 
-    // 计算域拉回函数
-    double computational_solution_c(int i, double xi, double eta) const;
-    Vector2D computational_solution_J(int i, double xi, double eta) const;  // Piola
-    double computational_source_f(int i, double xi, double eta) const;     // detJ加权
-    Vector2D computational_grad_c(int i, double xi, double eta) const;     // 链式法则
-};
+    // 由物理坐标反求计算域坐标。映射是分单元的，全局逆映射不再唯一定义，
+    // 故必须指明在哪个单元内求逆。
+    Point2D invert_mapping(double x, double y, int cell_idx) const;
 
-}
+private:
+    bool init_problem_1();  // ~ init_problem_4()
+    void setup_manufactured_solution();  // 算例 2 与算例 4 共用
+};
 ```
 
-**设计特点**:
-- **与 MS_FVM 接口完全一致**：`element_diffusion_coeff` 对应 `mid_A_coeff`，`polynomial_diffusion_coeff` 对应 `poly_A_coeff`
-- **非线性系数分解一致**：纯非线性部分 A(u) 不含 c*，稳定项 c* 在 Hdiv 组装时单独加到对角线
-- **单项式系数存储布局一致**：所有组分平铺，`u_ploy_coeff[comp * n_monomial + m]`
-- **曲边映射与 Darcy 共用基类设计**，方便后续复用组装代码
-- **计算域数据全部由物理域在线拉回**，不维护两套公式
-- **Piola 变换用于通量**，源项乘 detJ，梯度用链式法则 J^{-T}∇_ξ
+`init_problem()` 内的强制校验，是分单元映射唯一的防呆闸门：
 
-**算例 1：三组分正弦脉动扩散**
+```cpp
+if (mapping_->requires_mesh() && mesh_reader_ == nullptr) {
+    throw std::runtime_error("算例 N 使用分单元映射，必须在 init_problem() 之前调用 set_mesh(reader)");
+}
+if (mesh_reader_) { mapping_->set_mesh(*mesh_reader_); }
+```
+
+**所以所有算例 4 的入口都必须是这个顺序**（`main/MS_triblock_*.cpp`、`tools/export_ms_concentration.cpp` 都已遵守）：
+
+```cpp
+problem.set_problem_index(4);
+problem.set_mesh(reader);      // 必须在前
+problem.init_problem();        // 映射在这里才拿到网格建 Q8 表
+```
+
+对算例 1/2/3，`set_mesh` 是空操作（那三个映射不读网格），加上它不改变任何行为。
+
+#### 3.5.6 四个算例
+
+| 算例 | 映射 | PDE 数据 | 说明 |
+|---|---|---|---|
+| 1 | `SinPerturbationMapping(0.05)` | 独立 | 初值驱动 |
+| 2 | `SinPerturbationMapping(0.05)` | `setup_manufactured_solution()` | 制造解基准 |
+| 3 | `HalfAnnulusMapping` | 独立 | 半圆环几何 |
+| 4 | `TriBlockSwirlMapping` | `setup_manufactured_solution()` | **与算例 2 只差映射** |
+
+算例 2 与算例 4 的 PDE 数据一字不差，所以提取成 `setup_manufactured_solution()` 共用，误差表可以直接横向对比。
+
+**制造解**（算例 2 / 4 共用）：
 - c₁ = 0.25 sin(2πx) sin(8πt) + 0.25
 - c₂ = 0.25 sin(3πy) sin(6πt) + 0.25
 - c₃ = 1 - c₁ - c₂
-- 扩散参数：c₁₂=0.1, c₁₃=0.2, c₂₃=2.0, c*=0.1
+- 扩散参数：c₁₂=0.1, c₁₃=0.2, c₂₃=2.0, c\*=0.1
+- 通量由本构关系 `J = -Ā⁻¹∇c` 得出，`exact_flux_comp` 走逆变 Piola
+- 源项 `f = ∂c/∂t + ∇·J`，用中心差分（h=1e-6）
+- 边界条件 `boundary_flux_comp = Ĵ·n̂`
 
-**验证测试**: `examples/test_ms_problem.cpp`（8 项全通过 ✓）
-1. 曲边映射几何正确性（雅可比逆、detJ>0、转置逆）
-2. 质量守恒 c₁+c₂+c₃=1
-3. 初始条件正确性（t=0 时 c₁=c₂=0.25, c₃=0.5）
-4. 非线性扩散矩阵 M-矩阵性质
-   - 对角正、非对角负
-   - A(u) 列和=0（退化性质）
-   - bar_A(u) 列和=c*（正则化）
-   - element_diffusion_coeff 与 A(u) 一致、不含 c*
-5. 本构关系 ∇c + bar_A(c)·J = 0
-6. 多项式系数评估（单项式还原 + A(u) 评估 + 与单元均值一致）
-7. Piola 变换正向/逆向一致性
-8. 计算域源项 detJ 加权正确性
+注意真解定义在**物理坐标**上。因为算例 4 的外边界是直的、物理域仍是 `[0,1]²`，云图上会看到「浓度场是直的、网格是扭的」——这正是对的；若解跟着网格一起扭了，反而说明 Piola 变换或雅可比接错了。
+
+#### 3.5.7 验证
+
+**几何自检** `tests/test_ms_triblock_q8_main.cpp`：逐层检查 `detJ > 0`、条件数、非仿射度、共享边重合。这是算例 4 的准入闸门。
+
+**算例 4 收敛（BDF2, k=1）**，`main/MS_triblock_bdf2_main.cpp`：
+
+| 网格 | 单元 | c₀ | c₁ | c₂ | c₀ 阶 | c₁ 阶 | c₂ 阶 |
+|---|---|---|---|---|---|---|---|
+| 4x4 | 16 | 5.1175e-02 | 2.1011e-01 | 1.6949e-01 | — | — | — |
+| 8x8 | 64 | 1.3728e-02 | 5.2062e-02 | 4.5771e-02 | 1.90 | 2.01 | 1.89 |
+| 16x16 | 256 | 2.7300e-03 | 9.7577e-03 | 8.6506e-03 | 2.33 | 2.42 | 2.40 |
+
+| 网格 | J₀ | J₁ | J₂ | J₀ 阶 | J₁ 阶 | J₂ 阶 |
+|---|---|---|---|---|---|---|
+| 4x4 | 1.5411e+00 | 1.3456e+00 | 1.8524e+00 | — | — | — |
+| 8x8 | 7.7696e-01 | 6.1933e-01 | 8.6065e-01 | 0.99 | 1.12 | 1.11 |
+| 16x16 | 2.2703e-01 | 2.0716e-01 | 3.1547e-01 | 1.77 | 1.58 | 1.45 |
+
+浓度 L2 阶趋于 2 = k+1，符合预期。**通量的 8x8 那个 0.99 是前渐近，不是掉阶**——算例 2 在对应位置也是 1.58，细化后同样爬向 ~1.8。算例 4 与算例 2 形状一致，误差常数大 3–5 倍，这是分单元 Q8 映射比全局解析映射粗糙的代价。
+
+单层耗时 10.2s / 61.0s / 341.1s（约 5.6×/次加密），32x32 约 30 分钟，64x64 约 3 小时。
+
+**已知遗留**：`MSProblem::invert_mapping`（ms_problem.cpp:328）牛顿迭代跑满 `max_iter = 50` 后**无收敛断言**，直接返回手上的 `(ξ,η)`；同处注释「当前三个映射与单元无关」已过时（现在是四个）。
 
 ---
 
@@ -794,30 +1133,79 @@ $$
 - ✅ 边界条件处理
 - ✅ 求解与误差计算
 
-### solver/MsSolver - Maxwell-Stefan 专用求解器模块
+### solver/MSSolver - Maxwell-Stefan 专用求解器模块
 
-**功能规划**:
-- 多组分耦合的 H(div) 局部矩阵组装
-  - 稳定项 c* 对应的 G 加权 Gram 矩阵（线性部分）
-  - 非线性部分 A(u) 对应的加权 Gram 矩阵（Picard 迭代中用当前解更新）
-  - 质量矩阵（时间离散 ∂c/∂t 项）
-  - 散度耦合矩阵（速度-浓度耦合）
-- 全局系统组装（块结构，多组分耦合）
-- Picard 迭代循环
-  - 第一步用初值函数计算初始扩散系数
-  - 后续时间步用上一时间步的单项式系数还原浓度，计算 A(u)
-  - 求解线性系统，更新浓度单项式系数
-  - 迭代直到收敛
-- 时间推进（向后欧拉 / 可能扩展 Crank-Nicolson）
-- 边界条件处理（Neumann 法向通量）
-- 后处理与误差计算（L2 浓度误差、H(div) 通量误差）
+**文件**: `solver/MSSolver.h` / `solver/MSSolver.cpp`
+
+**当前状态**: 已实现并投入使用（Darcy 与 MS 两条线均已跑通收敛表）
+
+- ✅ 多组分耦合 H(div) 局部矩阵组装
+  - `getMatrixG_cmin`：稳定项 c\* 加权 Gram 矩阵（线性部分，所有组分相同）
+  - `getMatrixAG_init`：初值模式 A_ij 加权矩阵（第一个时间步）
+  - `getMatrixAG_poly`：多项式系数模式 A_ij 加权矩阵（后续 Picard 迭代）
+  - 质量矩阵、散度耦合矩阵
+- ✅ 全局块结构装配、法向通量 Neumann 边界
+- ✅ Picard 迭代 + 时间推进（后向欧拉 / BDF2，构造参数 `use_bdf2`）
+- ✅ GPU 求解路径 `solveWithDirichletBC_GPU`（GMRES + BJACOBI on CUDA）
+- ✅ 逐步解输出 `saveSolutionToFile`、L2 浓度误差、H(div) 通量误差
+
+**构造接口**:
+```cpp
+MSSolver(const MeshReader& mesh_reader,
+         const MaxwellStefan::MSProblem& problem,
+         double delta_t, double final_time,
+         int picard_max_iter, double picard_tol,
+         int gauss_point_num = 9, int gauss_point_num_1d = 9, int k = 1,
+         bool save_all_steps = true,
+         const std::string& data_subfolder = "solver_data",
+         bool use_bdf2 = false);
+```
+
+继承 `HdivMatrix`，网格/自由度/高斯点/k 等属性全部来自父类。
+
+**逐单元映射的接入点**（算例 4 的正确性全押在这里）：
+- 14 处直接调用 `jacobian()` / `jacobian_det()`（Piola 变换与面积元），全部传 `mesh_idx`
+- `applyNormalFluxBoundaryConditions` **按单元遍历**（`for elem`），靠 `edge_occurrence[global_edge] != 1` 跳过内部边，再把 `elem` 传进 `boundary_flux_comp`。边界边只属于唯一单元，故不存在两侧取到不同雅可比的问题
+- `computeConcentrationL2Error` / `computeFluxL2Error` 同样逐单元传 `elem`
+
+**输出约定**：`saveSolutionToFile` 路径前缀硬编码为 `data/ms_data/{subfolder}/`，文件名 `{总自由度}_{时间:.6f}.txt`，首行为总自由度数，其后每行一个值（`setprecision(12)`）。
 
 **与 Darcy 的区别**:
 - 多组分耦合（3 组分 → 块大小 ×3）
 - 非线性系数（需要 Picard 迭代）
 - 时间依赖（质量矩阵 / 时间步长）
 - 没有压力零均值约束（MS 方程不需要 Lagrange 乘子）
-- 稳定项 c* 对应线性部分，与 Darcy 的 K=I 情况类似
+- 稳定项 c\* 对应线性部分，与 Darcy 的 K=I 情况类似
+
+---
+
+## 后处理流水线
+
+算例 4 逐时间步动画的完整链路（其他算例同构，只换 `problem_index` 与目录名）：
+
+```bash
+# 1. 求解：500 步，dt=0.001，T=0.5 → data/ms_data/ms_triblock_8x8/
+./build/MS_triblock_frames
+
+# 2. 导出：解 → 三角剖分 CSV（第 4 参数为算例号，第 5 为细分密度）
+./build/tools/export_ms_concentration \
+    mesh/data/square_8x8.msh data/ms_data/ms_triblock_8x8 \
+    data/ms_triblock_8x8_plot 4 12
+
+# 3. 画帧：三组分云图 + 曲边网格叠加 → 501 张 PNG
+python3 scripts/plot_ms_concentration.py \
+    data/ms_triblock_8x8_plot data/ms_triblock_8x8_frames
+
+# 4. 合成
+python3 scripts/make_gif.py \
+    data/ms_triblock_8x8_frames data/gif/ms_triblock_8x8.gif
+```
+
+**`subdivisions`（第 5 参数）要按单元数往下调。** 采样点数按 `(s+1)(s+2)/2` 增长，CSV 体积同步增长：256 个单元下 `s=24` 每帧约 17MB（500 帧共 8.6G），`s=12` 每帧约 4.4MB（共 2.4G），每单元仍有约 300 个采样点，云图看不出差别。默认值保持 24，算例 1/2/3 已有的跑法不受影响。
+
+`export_ms_concentration` 内部建了一张 **边 → 属主单元** 表：映射现在是分单元的，而边是全局遍历的，必须先确定每条边归谁才能取对雅可比。它同时导出 `curved_edges.csv` 供画图叠加网格。
+
+`MS_triblock_frames_main.cpp` 与 `MS_half_annulus_main.cpp` 只差三处——算例号 3→4、多一句 `set_mesh`、保存子目录换名，其余配置刻意保持一字不差。这样 `data/ms_data/ms_triblock_8x8/` 与算例 2 的 `ms_conv_8x8/` 是**同网格同步长同终止时间**的两套解，可以直接逐帧对照。实测两者总自由度均为 7872，完全一致。
 
 ---
 
@@ -862,6 +1250,72 @@ make clean           # 删除 build 目录
 ---
 
 ## 开发日志
+
+- **2026-09-03**: 悬点网格生成模块（服务算例 5）✓
+  - 新增 `core/mesh_refiner.{h,cpp}` + `tools/refine_mesh.cpp` + `tools/plot_refined_mesh.py`，详见 §2.5
+  - **格式决策**：改输出 VTK + `.poly`，理由见 §2.5.2。
+    ⚠️ 初稿写的理由（"reader 的 switch 只有 `case 2`/`case 3`，五边形无法写回 .msh"）是**错的**，
+    当天核实后已在 §2.5.2 加勘误：该 switch 有 `case 11 → 5`、`case 12 → 6`，reader 本来就支持五边形
+  - **两个实现坑**：①原始节点必须先于中点搬进输出数组，否则中点编号被整体顶掉（初版写反了，重写修正）；
+    ②`0.25` 在 msh 里存成 `0.2499999999993471`，精确比较会漏掉一整列单元，`tol` 是必需参数
+  - **验证三层**：C++ 自检（含边流形性检查，这是判断悬点是否被粗单元认领的关键）→ 独立 Python 几何复核
+    （五边形第 5 顶点是否为边中点、重复坐标节点组数是否为 0）→ 黑白图目视
+  - 7 张网格（2x2 ~ 128x128）全部通过，最大单元边数均为 5；跳过 1x1（格线 0/0.5/1，无单元整体落在 [0.25,0.75]）
+  - 未触碰任何既有功能文件；Makefile 自动发现 `core/`、`tools/` 下的新文件，无需改动
+  - **后续未做**：如何读取 `.vtk`/`.poly` 回 solver，以及算例 5 本身，都尚未开始
+
+- **2026-09-03**: 悬点网格读回 + 质心扇形剖分（服务算例 5）✓
+  - `mesh/straight_mesh.{h,cpp}` 新增 `read_mesh_vtk()` / `read_vtk_nodes_and_cells()`，详见 §2.5.9。
+    **纯新增 172 行、0 删除**（`git diff | grep "^-"` 为空），原有 `read_mesh` 字节不变
+  - `mesh/polygon_triangulator.{h,cpp}` **未改动**：曾加过质心扇形剖分，
+    实测耳切法在共线悬点上本来就通过，遂整体回退，详见 §2.5.11
+  - 新增 `tests/test_vtk_mesh_main.cpp`，7 张网格各 25 项通过 / 1 项失败
+  - **唯一失败项**：`compute_cell_properties()` 对非四边形用顶点平均当质心，偏差恒为 0.1h。
+    这是**既有行为**，非本次引入；经排查 `cell_centroid_*` 全项目只用作缩放单项式基中心，
+    不影响离散解（§2.5.10）。**未修改该函数**——它与 .msh 路径共用
+  - **一次自己造成的破坏**：用"`old_string` 带尾换行、`new_string` 不带"的方式做插入，
+    把 `straight_mesh.cpp` 第 43-44 行合并了。立即 Read 确认、当场说明、一次 Edit 修回并核验 diff
+  - **后续未做**：算例 5 本身尚未开始
+
+- **2026-09-03**: 算例 4 逐时间步动画流水线跑通 ✓
+  - 新增 `main/MS_triblock_frames_main.cpp`：算例 4 + `square_8x8.msh`，dt=0.001，T=0.5，Picard 50/1e-6，k=1，GPU 求解，逐步保存
+  - 刻意照抄 `MS_half_annulus_main.cpp` 且只改三处（算例号、`set_mesh`、子目录名），使产物与算例 2 的 `ms_conv_8x8` 同网格同步长同终止时间，可逐帧对照；实测两者总自由度均为 7872
+  - `tools/export_ms_concentration.cpp` 两处修改：
+    - 补 `problem.set_mesh(reader)`。不补则算例 4 在 `init_problem()` 的 `requires_mesh()` 校验处抛异常；对算例 1/2/3 是空操作
+    - `subdivisions` 提为第 5 个可选命令行参数，默认仍为 24。256 单元下 `s=24` 全程 8.6G，改用 `s=12` 降到 2.4G，每单元仍约 300 采样点，云图无差别
+  - 产物：500 个时间步解（75M）→ 501 时刻 CSV（2.4G）→ 501 帧 PNG → `data/gif/ms_triblock_8x8.gif`（35.2 MB）
+  - 云图特征：**浓度场是直的、网格是扭的**。真解定义在物理坐标上，而算例 4 外边界保持直，所以两者本就不应一致；若解跟着网格扭了反而说明 Piola 变换或雅可比接错
+  - 编译 `-Wall -Wextra` 零警告
+
+- **2026-09-03**: 新增算例 4（`TriBlockSwirlMapping` 分单元曲边网格）✓
+  - `MSProblem::init_problem_4()`：构造 `TriBlockSwirlMapping` + 复用 `setup_manufactured_solution()`
+  - 把算例 2 与算例 4 共用的制造解数据（真解 / 通量 / 源项 / 边界 / A_ij）提取为 `setup_manufactured_solution()`。两个算例只有映射不同，PDE 数据一字不差，误差表可直接横向对比
+  - `init_problem()` 增加防呆闸门：`requires_mesh() && mesh_reader_ == nullptr` 时立刻抛异常，而不是留着 nullptr 等某个 Gauss 点崩掉、或更糟——静默算出错的雅可比
+  - BDF2 收敛验证（`main/MS_triblock_bdf2_main.cpp`）：浓度 L2 阶 1.90→2.33（趋于 k+1=2）；通量阶 0.99→1.77
+  - 通量在 8x8 的 0.99 是**前渐近而非掉阶**——算例 2 在对应位置也是 1.58，细化后同样爬向 ~1.8。算例 4 与算例 2 曲线形状一致，误差常数大 3–5 倍，即分单元 Q8 映射相对全局解析映射的代价
+  - 单层耗时 10.2s / 61.0s / 341.1s（约 5.6×/次加密）
+
+- **2026-09-03**: 实现 `TriBlockSwirlMapping` 两层曲边网格 ✓
+  - 第 1 层解析生成器 G：真三块分区（竖直分界曲线贯穿全高 + 水平界面终止于其上形成 T 型节点）叠加全局 swirl。swirl 在整条外边界消失，故物理域严格等于 `[0,1]²`，外边界保持直，精确解 / 源项 / 边界条件语义全部原样沿用
+  - 第 2 层逐单元 Q8 采样：读直边网格，取每单元 4 角点 + 4 中边点求 G，存该单元 Q8 节点表。**换网格只改采样密度，不改 G 的形状**，故任意网格文件都可扭曲
+  - 相对设计文档 §7.1 的偏离：不用「全局半步网格 (2n+1)² 求值」，改为逐单元从自己的 4 个角点构造。收益是不需要推出 n、不假设结构化 n×n、不需要把 `cell_idx` 反推成 (ci,cj)
+  - 相邻单元共享边重合 (R2) 按构造成立：`(x0+x1)/2` 与 `(x1+x0)/2` 在 IEEE 下逐位相同，实测 Q8 节点表差异 `0.000e+00`
+  - 踩坑：`cell_nodes` 虽保证逆时针，但**起始角点在单元间循环变化**（square_2x2 实测为 右下→右上→左上→左下），局部坐标不能硬编码「节点 0 = (-1,-1)」，建表时须按角点相对单元中心的实际位置重排成规范 Q8 序
+  - 参数由 `tools/triblock_sweep` 扫参标定，硬约束为 **N=2,4,8,16 四层全部 detJ > 0**。N=2 是绑定约束而非 N=4：G 层 detJ 全正不代表 Q8 插值不自交，早期只扫 `{4,8,16}` 会漏掉该失效
+  - `detJ_min` 随细化单调收敛到 0.20（G 自身下界），每加密一次差距减半：0.2225 / 0.2190 / 0.2101 / 0.2050 / 0.2024 / 0.2011 / 0.2004（N=2…128）
+  - 新增 `tests/test_ms_triblock_q8_main.cpp` 几何准入测试、`tools/export_triblock_mesh.cpp` 与 `tools/plot_triblock_bw.py`（黑白线，一网格一图）
+  - 遗留：Q8 逐单元映射只在单元交界处 C⁰，`detJ` 跨界面跳变；混合 H(div) VEM 所需光滑度在设计文档中仅为估计，未经证明
+
+- **2026-09-03**: 映射接口改为逐单元（新增 `cell_idx` 参数）✓
+  - `IsoparametricMapping` 六个雅可比方法的第一个参数统一改为 `int cell_idx`，**不给默认值**
+  - 不给默认值是刻意的：`MSSolver.cpp` 有 14 处直接调用 `jacobian()` / `jacobian_det()`，传错单元不会报错，只会让误差表看起来正常却是错的。不给默认值可让漏传的调用点在编译期断掉
+  - `(xi, eta)` 语义不变，仍是全局计算域坐标；`cell_idx` 是纯增量信息，只回答「这个点属于哪个单元」，不引入任何坐标变换
+  - 基类增加网格注入通道 `set_mesh()` / `has_mesh()` / `requires_mesh()` 与 `on_mesh_set()` 钩子。持有方式仿 `HdivMatrix`：只存指针，不拥有所有权。`set_mesh` 保持非虚，指针记账不在每个派生类重复
+  - `MSPdeData` 计算域回调（`*_comp`）凡内部用映射的一律加 `cell_idx`，参数顺序统一为「组分号 → 单元号 → 坐标 → 时间」；物理域回调不加。例外：`initial_concentration` 虽为物理域但内部要逆映射，故带 `cell_idx`；`evaluate_A_comp_poly` 只用多项式系数，故不带
+  - `MSProblem::invert_mapping` 增加 `cell_idx`：映射分单元后全局逆映射不再唯一定义，必须指明在哪个单元内求逆
+  - 同步改完 `MSSolver.cpp` 全部调用点与相关 test/tool，编译通过
+  - 三个既有映射（`SinPerturbationMapping` / `HalfAnnulusMapping` / `IdentityMapping`）收下 `cell_idx` 后直接丢弃，算例 1/2/3 数值行为与改动前逐位相同
+  - 遗留未修：`MSProblem::invert_mapping` 牛顿迭代跑满 50 步后无收敛断言，直接返回手上的 `(ξ,η)`；同处注释「当前三个映射与单元无关」已过时
 
 - **2026-07-24**: 实现 `examples/ms_problem` Maxwell-Stefan 算例模块 ✓
   - MS 专用曲边映射：`x = ξ + 0.1 sin(2πη + π/3)`, `y = η + 0.2 sin(2πξ + π/4)`

@@ -48,12 +48,18 @@ int main() {
             if (std::abs(xi - 0.5) < disc_tol || std::abs(eta - 0.5) < disc_tol)
                 continue;
 
-            Point2D phys = mapping.physical_coords(xi, eta);
+            // 本测试不加载网格，只在 [0,1]^2 上均匀采样，故单元编号统一传 0。
+            // 当前三种映射（Sin/HalfAnnulus/Identity）都与单元无关，传 0 与传
+            // 任何编号等价；将来引入分单元映射后，本测试需改成按单元逐个采样。
+            const int cell_idx = 0;
+            Point2D phys = mapping.physical_coords(cell_idx, xi, eta);
 
             for (int i = 0; i < n; ++i) {
                 for (int j = 0; j < n; ++j) {
-                    double A_comp = pde.evaluate_A_comp_initial(i, j, xi, eta);
-                    double A_phys = pde.evaluate_A_initial(i, j, phys.x, phys.y);
+                    double A_comp =
+                        pde.evaluate_A_comp_initial(i, j, cell_idx, xi, eta);
+                    double A_phys =
+                        pde.evaluate_A_initial(i, j, cell_idx, phys.x, phys.y);
                     double err = std::abs(A_comp - A_phys);
 
                     max_err = std::max(max_err, err);

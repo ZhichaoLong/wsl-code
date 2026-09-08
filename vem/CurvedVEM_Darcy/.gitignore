@@ -12,6 +12,9 @@
 
 # 算例输出，约 20 GB，不上传。加前导 / 限定本目录，以免误伤 mesh/data
 /data/
+# tools/refine_mesh.cpp 的输出（细化网格 .poly/.vtk 与配图），
+# 可由已跟踪的 mesh/data/*.msh 重新生成，不上传。
+/mesh/data_refined/
 # 编译产物
 /build/
 # 编译好的可执行文件（无扩展名，根规则的 *.out/*.exe 抓不到）

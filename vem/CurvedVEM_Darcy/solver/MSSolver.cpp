@@ -178,7 +178,7 @@ bool MSSolver::initialize() {
         if (dof_total > max_dof_total)
             max_dof_total = dof_total;
     }
-    PetscInt nnz_per_row = max_dof_total * 8;
+    PetscInt nnz_per_row = max_dof_total * 4;
     if (nnz_per_row > total_dof)
         nnz_per_row = total_dof;
 
@@ -565,7 +565,8 @@ PetscErrorCode MSSolver::applyNormalFluxBoundaryConditions(
                         // 计算域法向通量（已含 Piola 变换，
                         // 积分不变性保证无需额外乘 J_e）
                         double flux = pde.boundary_flux_comp(
-                            comp, xi, eta, normal.x, normal.y, time);
+                            comp, elem, xi, eta,
+                            normal.x, normal.y, time);
 
                         BasisPoint quad_point(xi, eta);
                         double monomial = edge_basis.evalEdgeMonomial(
@@ -1267,9 +1268,9 @@ double MSSolver::vemHdiv_gm_gm_ploy_cmin(int mesh_idx,
 
             // 几何修正张量 K_xi = (c* / detJ) * J^T * J
             // 按完整 2x2 张量的四个分量存储，不假设对称性
-            MaxwellStefan::Tensor2D J = mapping.jacobian(xi, eta);
+            MaxwellStefan::Tensor2D J = mapping.jacobian(mesh_idx, xi, eta);
             //雅可比的行列式
-            double detJ = mapping.jacobian_det(xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
             double s = cstar / detJ;
 
             // nu = s * J^T * J 的四个分量：
@@ -1366,11 +1367,11 @@ double MSSolver::vemHdiv_gm_gm_ploy_AG_init(int mesh_idx,
             BasisPoint x = makeBasisPoint(xi, eta);
 
             // A_ij 在计算域上求值（初值模式）
-            double Aij = pde.evaluate_A_comp_initial(i, j, xi, eta);
+            double Aij = pde.evaluate_A_comp_initial(i, j, mesh_idx, xi, eta);
 
             // 几何修正张量 K_xi = (A_ij / detJ) * J^T * J
-            MaxwellStefan::Tensor2D J = mapping.jacobian(xi, eta);
-            double detJ = mapping.jacobian_det(xi, eta);
+            MaxwellStefan::Tensor2D J = mapping.jacobian(mesh_idx, xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
             double s = Aij / detJ;
 
             // nu = s * J^T * J 的四个分量（完整非对称形式）
@@ -1467,8 +1468,8 @@ double MSSolver::vemHdiv_gm_gm_ploy_AG_poly(int mesh_idx,
                                                   xD_x, xD_y, hD, xi, eta);
 
             // 几何修正张量 K_xi = (A_ij / detJ) * J^T * J
-            MaxwellStefan::Tensor2D J = mapping.jacobian(xi, eta);
-            double detJ = mapping.jacobian_det(xi, eta);
+            MaxwellStefan::Tensor2D J = mapping.jacobian(mesh_idx, xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
             double s = Aij / detJ;
 
             // nu = s * J^T * J 的四个分量（完整非对称形式）
@@ -1552,8 +1553,8 @@ double MSSolver::computeStabilizationCoeffCmin(int mesh_idx) {
             double xi = point.x[0];
             double eta = point.x[1];
 
-            MaxwellStefan::Tensor2D J = mapping.jacobian(xi, eta);
-            double detJ = mapping.jacobian_det(xi, eta);
+            MaxwellStefan::Tensor2D J = mapping.jacobian(mesh_idx, xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
             double s = cstar / detJ;
 
             int_xx += s * (J.xx * J.xx + J.yx * J.yx) * point.w;
@@ -1605,10 +1606,10 @@ double MSSolver::computeStabilizationCoeffInit(int mesh_idx, int i, int j) {
             double xi = point.x[0];
             double eta = point.x[1];
 
-            double Aij = pde.evaluate_A_comp_initial(i, j, xi, eta);
+            double Aij = pde.evaluate_A_comp_initial(i, j, mesh_idx, xi, eta);
 
-            MaxwellStefan::Tensor2D J = mapping.jacobian(xi, eta);
-            double detJ = mapping.jacobian_det(xi, eta);
+            MaxwellStefan::Tensor2D J = mapping.jacobian(mesh_idx, xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
             double s = Aij / detJ;
 
             int_xx += s * (J.xx * J.xx + J.yx * J.yx) * point.w;
@@ -1668,8 +1669,8 @@ double MSSolver::computeStabilizationCoeffPoly(
             double Aij = pde.evaluate_A_comp_poly(i, j, u_ploy_coeff,
                                                   xD_x, xD_y, hD, xi, eta);
 
-            MaxwellStefan::Tensor2D J = mapping.jacobian(xi, eta);
-            double detJ = mapping.jacobian_det(xi, eta);
+            MaxwellStefan::Tensor2D J = mapping.jacobian(mesh_idx, xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
             double s = Aij / detJ;
 
             int_xx += s * (J.xx * J.xx + J.yx * J.yx) * point.w;
@@ -1795,7 +1796,7 @@ AutoPetscMat MSSolver::HdivMatrixH_curved(int mesh_idx) {
                     double xi = point.x[0];
                     double eta = point.x[1];
                     BasisPoint x = makeBasisPoint(xi, eta);
-                    double detJ = mapping.jacobian_det(xi, eta);
+                    double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
                     double mi = basis.evalMonomial2D(i, xD, hD, x);
                     double mj = basis.evalMonomial2D(j, xD, hD, x);
                     val += mi * mj * detJ * point.w;
@@ -1877,11 +1878,12 @@ double MSSolver::vemHdiv_uh_mk_F(bool is_initial_first_tstep,
             double xi = point.x[0];
             double eta = point.x[1];
             BasisPoint x = makeBasisPoint(xi, eta);
-            double detJ = mapping.jacobian_det(xi, eta);
+            double detJ = mapping.jacobian_det(mesh_idx, xi, eta);
 
             // 1. 源项（以计算域坐标定义的函数，积分时需乘 detJ）
             //    源项使用当前时刻 current_time_ 求值
-            double f_val = pde.source_f_comp(comp_idx, xi, eta, current_time_) * detJ;
+            double f_val = pde.source_f_comp(comp_idx, mesh_idx,
+                                             xi, eta, current_time_) * detJ;
 
             // 2. 时间历史项
             //    BDF1: u^{n-1} / Δt
@@ -1889,7 +1891,8 @@ double MSSolver::vemHdiv_uh_mk_F(bool is_initial_first_tstep,
             double u_val = 0.0;
             if (is_initial_first_tstep) {
                 // 初始步：用初值函数（计算域坐标下求值），BDF1 形式
-                u_val = pde.initial_concentration_comp(comp_idx, xi, eta);
+                u_val = pde.initial_concentration_comp(
+                    comp_idx, mesh_idx, xi, eta);
                 u_val = u_val * detJ / delta_t_;
             } else if (use_bdf2_step) {
                 // BDF2: (4 u^{n-1} - u^{n-2}) / (2 Δt)
@@ -1908,7 +1911,7 @@ double MSSolver::vemHdiv_uh_mk_F(bool is_initial_first_tstep,
                 } else {
                     // 第 2 步：u^{n-2} = u^0，直接用初值函数（精确）
                     u_prev_prev_val = pde.initial_concentration_comp(
-                        comp_idx, xi, eta);
+                        comp_idx, mesh_idx, xi, eta);
                 }
                 u_val = (4.0 * u_prev_val - u_prev_prev_val) * detJ
                       / (2.0 * delta_t_);
@@ -2545,7 +2548,7 @@ std::vector<double> MSSolver::computeConcentrationL2Error(int gauss_point_num) {
                         conc_num += coeff[m] * monom_vals[m];
                     }
                     double conc_exact = pde.exact_concentration_comp(
-                        c, xi, eta, current_time_);
+                        c, elem, xi, eta, current_time_);
                     double diff = conc_num - conc_exact;
                     error_squared[c] += diff * diff * point.w;
                     exact_squared[c] += conc_exact * conc_exact * point.w;
@@ -2684,7 +2687,7 @@ std::vector<double> MSSolver::computeFluxL2Error(int gauss_point_num) {
                         flux_num.y += coeffs[i] * val.y;
                     }
                     MaxwellStefan::Vector2D flux_exact =
-                        pde.exact_flux_comp(c, point.x[0], point.x[1],
+                        pde.exact_flux_comp(c, elem, point.x[0], point.x[1],
                                             current_time_);
                     double dx = flux_num.x - flux_exact.x;
                     double dy = flux_num.y - flux_exact.y;

@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
 
             // 计算 A_ij 的平均值（质心处的值，粗略参考）
             double Aij_centroid = pde.evaluate_A_comp_initial(
-                i, j, md.cell_centroid_x[0], md.cell_centroid_y[0]);
+                i, j, 0, md.cell_centroid_x[0], md.cell_centroid_y[0]);
 
             char name[128];
             snprintf(name, sizeof(name), "AG_init[%d,%d]  (A_ij ≈ %.6f)",
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  ||AG[0,0]||_F = " << frob_AG << "\n";
     std::cout << "  比值 = " << frob_AG / frob_G << "\n";
     std::cout << "  （若 A_00 为常数，则应等于 A_00/c* = "
-              << (pde.evaluate_A_comp_initial(0, 0, md.cell_centroid_x[0],
+              << (pde.evaluate_A_comp_initial(0, 0, 0, md.cell_centroid_x[0],
                                                md.cell_centroid_y[0]) / cstar)
               << "，此处为近似参考，因为 A_00 不是常数）\n";
 

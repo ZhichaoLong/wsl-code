@@ -43,14 +43,21 @@ int main() {
                 double xi = (double)ix / (N - 1);
                 double eta = (double)iy / (N - 1);
 
+                // 本测试不加载网格，只在 [0,1]^2 上均匀采样，单元编号统一传 0。
+                // 当前三种映射都与单元无关，传 0 与传任何编号等价；将来引入
+                // 分单元映射后，本测试需改成按单元逐个采样。
+                const int cell_idx = 0;
+
                 // 计算域初值
-                double c_comp = pde.initial_concentration_comp(i, xi, eta);
+                double c_comp =
+                    pde.initial_concentration_comp(i, cell_idx, xi, eta);
 
                 // 正映射到物理域
-                Point2D phys = mapping.physical_coords(xi, eta);
+                Point2D phys = mapping.physical_coords(cell_idx, xi, eta);
 
                 // 物理域初值（内部通过逆映射反求 ξ,η）
-                double c_phys = pde.initial_concentration(i, phys.x, phys.y);
+                double c_phys =
+                    pde.initial_concentration(i, cell_idx, phys.x, phys.y);
 
                 double err = std::abs(c_comp - c_phys);
                 max_err = std::max(max_err, err);
