@@ -1,0 +1,138 @@
+/**
+ * 右预条件重启 GMRES：通过 MixedGpu::apply 计算 A*x，不组装全局矩阵。
+ * Krylov 向量及 BLAS 运算在 GPU；Hessenberg、Givens 旋转和小系统回代在 CPU。
+ * 采用两次经典 Gram–Schmidt（CGS2），每次接受解前复算真实残差。
+ */
+#include "equation_gpu.cuh"
+#include <cmath>
+#include <algorithm>
+#include <sstream>
+#include <iomanip>
+namespace vgpu {
+// 创建 cuBLAS 句柄并分配工作向量；n 为完整混合系统自由度数。
+Krylov::Krylov(int n) : n_(n), w_(n), r_(n), z_(n) {
+    blas(cublasCreate(&h_));
+}
+// 释放句柄；成员 Buffer 随对象析构自动释放显存。
+Krylov::~Krylov() {
+    if (h_)
+        cublasDestroy(h_);
+}
+// GPU 计算二范数，仅将单个标量返回 CPU。
+double Krylov::norm(const double* x) {
+    double r;
+    blas(cublasDnrm2(h_, n_, x, 1, &r));
+    return r;
+}
+// 设备向量复制，不经过 CPU 主存。
+void Krylov::copy(const double* x, double* y) {
+    blas(cublasDcopy(h_, n_, x, 1, y, 1));
+}
+// 利用内部 r_ 工作区计算 ||x-y||₂，输入向量保持不变。
+double Krylov::difference(const double* x, const double* y) {
+    copy(x, r_.data());
+    double minus = -1;
+    blas(cublasDaxpy(h_, n_, &minus, y, 1, r_.data(), 1));
+    return norm(r_.data());
+}
+// b/x 均是设备指针；x 同时作为初猜和输出，tol 为真实相对残差容差。
+// 右预条件在一次线性求解期间固定，求解 A M⁻¹ y=b 后累加 x。
+SolveInfo Krylov::solve(MixedGpu& A, const double* b, double* x, double tol, int maxit, int restart) {
+    if (!(tol > 0 && tol < 1) || maxit < 1 || restart < 1 || A.size() != n_)
+        throw std::invalid_argument("invalid GMRES arguments");
+    restart = std::min(restart, n_);
+    V_.resize(size_t(restart + 1) * n_);
+    coeff_.resize(restart + 1);
+    corr_.resize(restart + 1);
+    // GPU 保存 V；CPU 仅存 O(restart²) 的小 Hessenberg 和旋转系数。
+    std::vector<double> H((restart + 1) * restart), cs(restart), sn(restart), g(restart + 1), y(restart);
+    double bn = norm(b), threshold = tol * (bn > 0 ? bn : 1), minus = -1, one = 1;
+    int iterations = 0;
+    double res = 0;
+    // 重新计算 b-Ax，避免仅依赖小系统的递推残差而误报收敛。
+    auto residual = [&]() {
+        A.apply(x, w_.data());
+        copy(b, r_.data());
+        blas(cublasDaxpy(h_, n_, &minus, w_.data(), 1, r_.data(), 1));
+        return norm(r_.data());
+    };
+    while (true) {
+        res = residual();
+        if (!std::isfinite(res))
+            throw std::runtime_error("GMRES nonfinite residual");
+        if (res <= threshold)
+            return {iterations, res / (bn > 0 ? bn : 1)};
+        if (iterations >= maxit) {
+            // 科学计数法保留小残差，避免 to_string 将未收敛残差显示成 0.000000。
+            std::ostringstream message;
+            message << "GMRES failed, iterations=" << iterations << " relative residual="
+                    << std::scientific << std::setprecision(12) << res / (bn > 0 ? bn : 1);
+            throw std::runtime_error(message.str());
+        }
+        std::fill(H.begin(), H.end(), 0);
+        std::fill(g.begin(), g.end(), 0);
+        g[0] = res;
+        copy(r_.data(), V_.data());
+        double inv = 1 / res;
+        blas(cublasDscal(h_, n_, &inv, V_.data(), 1));
+        int used = 0;
+        // Arnoldi 扩展：先应用 M⁻¹，再应用 matrix-free A。
+        for (int j = 0; j < restart && iterations < maxit; ++j) {
+            A.precondition(V_.data() + size_t(j) * n_, z_.data());
+            A.apply(z_.data(), w_.data());
+            // Two-pass classical Gram-Schmidt: all inner products in two GEMVs,
+            // avoiding O(restart) host-synchronized scalar dot calls per iteration.
+            double zero = 0;
+            blas(cublasDgemv(h_, CUBLAS_OP_T, n_, j + 1, &one, V_.data(), n_, w_.data(), 1, &zero,
+                             coeff_.data(), 1));
+            blas(cublasDgemv(h_, CUBLAS_OP_N, n_, j + 1, &minus, V_.data(), n_, coeff_.data(), 1, &one,
+                             w_.data(), 1));
+            blas(cublasDgemv(h_, CUBLAS_OP_T, n_, j + 1, &one, V_.data(), n_, w_.data(), 1, &zero,
+                             corr_.data(), 1));
+            blas(cublasDgemv(h_, CUBLAS_OP_N, n_, j + 1, &minus, V_.data(), n_, corr_.data(), 1, &one,
+                             w_.data(), 1));
+            blas(cublasDaxpy(h_, j + 1, &one, corr_.data(), 1, coeff_.data(), 1));
+            CUDA(cudaMemcpy(H.data() + j * (restart + 1), coeff_.data(), (j + 1) * sizeof(double),
+                            cudaMemcpyDeviceToHost));
+            double next = norm(w_.data());
+            H[j + 1 + j * (restart + 1)] = next;
+            if (next > 1e-30) {
+                copy(w_.data(), V_.data() + size_t(j + 1) * n_);
+                double invn = 1 / next;
+                blas(cublasDscal(h_, n_, &invn, V_.data() + size_t(j + 1) * n_, 1));
+            }
+            // CPU 应用已有 Givens 旋转，将当前 Hessenberg 列三角化。
+            for (int i = 0; i < j; ++i) {
+                double a = H[i + j * (restart + 1)], b1 = H[i + 1 + j * (restart + 1)];
+                H[i + j * (restart + 1)] = cs[i] * a + sn[i] * b1;
+                H[i + 1 + j * (restart + 1)] = -sn[i] * a + cs[i] * b1;
+            }
+            double a = H[j + j * (restart + 1)], b1 = H[j + 1 + j * (restart + 1)], rho = std::hypot(a, b1);
+            if (!std::isfinite(rho) || rho < 1e-30)
+                throw std::runtime_error("GMRES breakdown");
+            cs[j] = a / rho;
+            sn[j] = b1 / rho;
+            H[j + j * (restart + 1)] = rho;
+            H[j + 1 + j * (restart + 1)] = 0;
+            g[j + 1] = -sn[j] * g[j];
+            g[j] *= cs[j];
+            used = j + 1;
+            ++iterations;
+            if (std::abs(g[j + 1]) <= threshold || next <= 1e-30)
+                break;
+        }
+        // 回代求小型最小二乘解，然后在 GPU 组合基向量并应用右预条件。
+        for (int i = used - 1; i >= 0; --i) {
+            double a = g[i];
+            for (int j = i + 1; j < used; ++j)
+                a -= H[i + j * (restart + 1)] * y[j];
+            y[i] = a / H[i + i * (restart + 1)];
+        }
+        z_.zero();
+        for (int i = 0; i < used; ++i)
+            blas(cublasDaxpy(h_, n_, &y[i], V_.data() + size_t(i) * n_, 1, z_.data(), 1));
+        A.precondition(z_.data(), w_.data());
+        blas(cublasDaxpy(h_, n_, &one, w_.data(), 1, x, 1));
+    }
+}
+} // namespace vgpu

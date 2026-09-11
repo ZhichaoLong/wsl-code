@@ -1,0 +1,24 @@
+[
+  {
+    "backend": "baseline",
+    "first_rss_MiB": 483.4453125,
+    "last_rss_MiB": 513.1640625,
+    "warm_growth_MiB": 26.140625,
+    "warm_range_MiB": 26.140625,
+    "gpu_range_MiB": 0.0,
+    "petsc_range_B": 0.0,
+    "mean_KSP_s": 0.07736433599285714,
+    "max_residual": 9.318794808920155e-13
+  },
+  {
+    "backend": "cpu",
+    "first_rss_MiB": 407.6953125,
+    "last_rss_MiB": 407.8359375,
+    "warm_growth_MiB": 0.04296875,
+    "warm_range_MiB": 0.04296875,
+    "gpu_range_MiB": 0.0,
+    "petsc_range_B": 0.0,
+    "mean_KSP_s": 0.06932630605000001,
+    "max_residual": 9.318790585135116e-13
+  }
+]

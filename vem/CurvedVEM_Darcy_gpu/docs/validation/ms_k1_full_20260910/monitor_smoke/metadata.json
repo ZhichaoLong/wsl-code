@@ -1,0 +1,16 @@
+{
+  "started_at": "2026-09-10T16:04:51.595847+08:00",
+  "command": [
+    "/home/lzccode/code/vem/CurvedVEM_Darcy_gpu/build/test_stage"
+  ],
+  "cwd": "/home/lzccode/code/vem/CurvedVEM_Darcy_gpu",
+  "interval_s": 1.0,
+  "gpu_scope": "whole_device",
+  "baseline_gpu": [
+    1561.0,
+    6339.0,
+    11.0
+  ],
+  "pid": 7920,
+  "monitor_pid": 7909
+}

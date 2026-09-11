@@ -1,0 +1,21 @@
+
+MS conservation test 1
+方程=ms 算例=1 k=1
+尺度 h=sqrt(计算域面积/实际单元数)；另打印 h_max。总耗时含读网格、GPU 准备、求解、诊断、保存和资源释放。
+所有网格 T=0.003；时间格式=BDF2（首步 Euler）
+固定目标 dt=0.001；时间误差可能影响细网格空间阶。
+步数向上取整，dt=T/N；最大步数=1000000，不加半步时间。
+累计 CSV=output/independent_main_test/ms1/mass.csv
+累计结果记录=output/independent_main_test/ms1/results.txt
+mesh=4x4 cells=16 h=2.50000000e-01 h_max=3.53553391e-01 dt_target=1.00000000e-03 dt=1.00000000e-03 steps=3
+
+>>>> 已完成 1/1 层网格：MS conservation test 1 <<<<
+无解析解：不填写解析误差/收敛阶；检查各组分物理质量守恒
+mesh              comp     initial_mass        final_mass        mass_drift
+4x4                  0      2.750000e-01      2.750000e-01     -7.593925e-14
+4x4                  1      2.750000e-01      2.750000e-01     -3.896883e-14
+4x4                  2      4.500000e-01      4.500000e-01     -1.331157e-13
+
+网格尺度、时间网格及墙钟耗时（s）
+mesh             cells     dofs          h     h_max         dt  steps   setup   iterate    error    total  linear
+4x4                 16      528  2.500e-01 3.536e-01  1.000e-03      3   0.002     0.958    0.000    0.972    1784

@@ -1,0 +1,37 @@
+
+MS manufactured convergence test 4
+方程=ms 算例=4 k=1
+尺度 h=sqrt(计算域面积/实际单元数)；另打印 h_max。总耗时含读网格、GPU 准备、求解、诊断、保存和资源释放。
+所有网格 T=0.1；时间格式=BDF2（首步 Euler）
+dt_target=0.1*h^1；匹配时间/空间误差阶，不保证有限网格已进入渐近区。
+步数向上取整到 2^a*5^b，dt=T/N；最大步数=1000000，不加半步时间。
+累计 CSV=output/independent_main_test/ms4/convergence.csv
+累计结果记录=output/independent_main_test/ms4/results.txt
+mesh=4x4 cells=16 h=2.50000000e-01 h_max=3.53553391e-01 dt_target=2.50000000e-02 dt=2.50000000e-02 steps=4
+
+>>>> 已完成 1/2 层网格：MS manufactured convergence test 4 <<<<
+计算域绝对 L2 误差与空间收敛阶（首层 '-' 表示无前一层可比较）
+mesh              comp      scalar_L2    order       flux_L2    order
+4x4                  0   5.117533e-02        -   1.541104e+00        -
+4x4                  1   2.101133e-01        -   1.345598e+00        -
+4x4                  2   1.694946e-01        -   1.852405e+00        -
+
+网格尺度、时间网格及墙钟耗时（s）
+mesh             cells     dofs          h     h_max         dt  steps   setup   iterate    error    total  linear
+4x4                 16      528  2.500e-01 3.536e-01  2.500e-02      4   0.002     5.066    0.000    5.071   14671
+mesh=8x8 cells=64 h=1.25000000e-01 h_max=1.76776695e-01 dt_target=1.25000000e-02 dt=1.25000000e-02 steps=8
+
+>>>> 已完成 2/2 层网格：MS manufactured convergence test 4 <<<<
+计算域绝对 L2 误差与空间收敛阶（首层 '-' 表示无前一层可比较）
+mesh              comp      scalar_L2    order       flux_L2    order
+4x4                  0   5.117533e-02        -   1.541104e+00        -
+4x4                  1   2.101133e-01        -   1.345598e+00        -
+4x4                  2   1.694946e-01        -   1.852405e+00        -
+8x8                  0   1.372777e-02    1.898   7.769636e-01    0.988
+8x8                  1   5.206166e-02    2.013   6.193299e-01    1.119
+8x8                  2   4.577142e-02    1.889   8.606528e-01    1.106
+
+网格尺度、时间网格及墙钟耗时（s）
+mesh             cells     dofs          h     h_max         dt  steps   setup   iterate    error    total  linear
+4x4                 16      528  2.500e-01 3.536e-01  2.500e-02      4   0.002     5.066    0.000    5.071   14671
+8x8                 64     2016  1.250e-01 1.768e-01  1.250e-02      8   0.002    22.007    0.000   22.014   66240
